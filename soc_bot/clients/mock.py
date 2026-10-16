@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from ..models import IpReport, IsolationResult
 from ..store import IncidentStore
 from ..validators import is_public_ip, parse_ip
-from .base import APIError, NotFoundError
+from .base import APIError
+from .ssh_response import SshResponseClient
 
 _SEED = (
     ("Suspicious discovery commands on soc-victim", "High", "soc-victim", "192.168.56.30",
@@ -44,34 +45,29 @@ class MockSplunkClient:
         ]
 
 
-class MockSshResponseClient:
+class MockSshResponseClient(SshResponseClient):
     service = "SSH responder (mock)"
 
     def __init__(self) -> None:
-        self.hosts = {"soc-victim": "192.168.56.20", "soc-attacker": "192.168.56.30"}
+        super().__init__(
+            hosts={"soc-victim": "192.168.56.20", "soc-attacker": "192.168.56.30"},
+            user="responder",
+            key_path="",
+        )
         self.isolated: set[str] = set()
 
-    def resolve(self, hostname: str) -> str:
-        address = self.hosts.get(hostname.lower().split(".", 1)[0])
-        if address is None:
-            raise NotFoundError(self.service, 404, f"`{hostname}` is not in the responder inventory")
-        return address
-
-    async def isolate(self, hostname: str) -> IsolationResult:
-        address = self.resolve(hostname)
+    async def _run(self, action: str, hostname: str) -> IsolationResult:
+        name, address = self.resolve(hostname)
         await asyncio.sleep(0.5)
-        if address in self.isolated:
-            raise APIError(self.service, 400, "Host is already isolated")
-        self.isolated.add(address)
-        return IsolationResult(hostname, address, "isolate", "isolated")
-
-    async def unisolate(self, hostname: str) -> IsolationResult:
-        address = self.resolve(hostname)
-        await asyncio.sleep(0.5)
+        if action == "isolate":
+            if address in self.isolated:
+                raise APIError(self.service, 400, "Host is already isolated")
+            self.isolated.add(address)
+            return IsolationResult(name, address, action, "isolated")
         if address not in self.isolated:
             raise APIError(self.service, 400, "Host is not isolated")
         self.isolated.discard(address)
-        return IsolationResult(hostname, address, "unisolate", "released")
+        return IsolationResult(name, address, action, "released")
 
 
 class MockEnrichmentClient:

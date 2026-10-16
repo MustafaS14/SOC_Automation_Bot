@@ -63,7 +63,7 @@ The host-only network is isolated from the real LAN, so the attack simulation ca
 | auditd `execve` rule on victim | ✅ | Key `exec_cmd`; Caldera commands verified in the log |
 | Filebeat → Logstash → Splunk | ⏳ | Next block of work |
 | Splunk detections (SPL) | ⏳ | Alerts via webhook to the bot |
-| Discord bot | 🔧 | Code exists; being re-pointed from Azure to Splunk (see `bot-refactor-plan.md`) |
+| Discord bot | 🔧 | Migrated to Splunk webhook, SQLite store, `/hunt` and SSH isolation (see `bot-refactor-plan.md`); not yet run against live Splunk or the victim VM |
 
 ## Design decisions
 

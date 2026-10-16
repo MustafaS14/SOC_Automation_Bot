@@ -1,0 +1,8 @@
+#!/bin/bash
+# Install as /usr/local/sbin/soc-gate (root:root, 0755) and reference it from authorized_keys with command=.
+# sshd puts the client's requested command in SSH_ORIGINAL_COMMAND; only these two exact strings run.
+case "${SSH_ORIGINAL_COMMAND:-}" in
+  "sudo -n /usr/local/sbin/soc-isolate")   exec sudo -n /usr/local/sbin/soc-isolate ;;
+  "sudo -n /usr/local/sbin/soc-unisolate") exec sudo -n /usr/local/sbin/soc-unisolate ;;
+  *) echo "denied" >&2; exit 126 ;;
+esac

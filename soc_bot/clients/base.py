@@ -23,24 +23,26 @@ def _error_message(resp: httpx.Response) -> str | None:
     try:
         body = resp.json()
     except ValueError:
-        return resp.text[:300]
+        return resp.text
     if not isinstance(body, dict):
-        return str(body)[:300]
+        return str(body)
     # Splunk REST: {"messages": [{"type": "FATAL", "text": "..."}]}
     messages = body.get("messages")
     if isinstance(messages, list):
-        texts = [m.get("text") for m in messages if isinstance(m, dict) and m.get("text")]
+        texts = [str(m["text"]) for m in messages if isinstance(m, dict) and m.get("text")]
         if texts:
-            return "; ".join(texts)[:300]
+            return "; ".join(texts)
     # HEC: {"text": "Invalid token", "code": 4}
     err = body.get("error", body)
     if isinstance(err, dict):
-        return err.get("message") or err.get("text")
-    return str(err)[:300]
+        value = err.get("message") or err.get("text")
+        return str(value) if value else None
+    return str(err)
 
 
 def raise_for_status(service: str, resp: httpx.Response) -> None:
     if resp.status_code < 400:
         return
     cls = NotFoundError if resp.status_code == 404 else APIError
-    raise cls(service, resp.status_code, _error_message(resp) or resp.reason_phrase)
+    message = (_error_message(resp) or resp.reason_phrase)[:300]
+    raise cls(service, resp.status_code, message)

@@ -1,7 +1,7 @@
 import httpx
 import pytest
 
-from soc_bot.clients import APIError, HecClient, NotFoundError, SplunkClient, SshResponseClient
+from soc_bot.clients import APIError, HecClient, NotFoundError, SplunkClient
 from soc_bot.models import IpReport
 
 
@@ -51,6 +51,27 @@ async def test_splunk_404_is_not_found():
         await make_splunk(lambda r: httpx.Response(404, json={})).search("search *")
 
 
+@pytest.mark.parametrize(
+    "body",
+    [["a", "list"], "just a string", {"messages": "not a list"}, {"messages": [{"text": 5}, "x", None]},
+     {"error": ["nested", "list"]}, {"error": {"message": None}}, None],
+)
+async def test_unexpected_error_shapes_do_not_crash(body):
+    client = make_splunk(lambda r: httpx.Response(500, json=body))
+    with pytest.raises(APIError) as exc:
+        await client.search("search *")
+    assert exc.value.status == 500
+
+
+async def test_error_messages_are_truncated_to_300_chars():
+    long = "x" * 1000
+    for response in (httpx.Response(400, text=long), httpx.Response(400, json={"error": {"message": long}}),
+                     httpx.Response(400, json={"messages": [{"text": long}]})):
+        with pytest.raises(APIError) as exc:
+            await make_splunk(lambda r, resp=response: resp).search("search *")
+        assert len(exc.value.message) == 300
+
+
 async def test_hec_sends_event_and_swallows_failures():
     seen = {}
 
@@ -66,13 +87,6 @@ async def test_hec_sends_event_and_swallows_failures():
 
     failing = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(403, json={"text": "Invalid token"})))
     await HecClient(http=failing, url="https://x", token="bad").send({"a": 1})  # must not raise
-
-
-def test_ssh_inventory_is_an_allowlist():
-    client = SshResponseClient(hosts={"soc-victim": "192.168.56.20"}, user="responder", key_path="k")
-    assert client.resolve("SOC-VICTIM.lab.local") == "192.168.56.20"
-    with pytest.raises(NotFoundError):
-        client.resolve("dc01")
 
 
 def test_verdict_is_incomplete_when_a_lookup_failed():

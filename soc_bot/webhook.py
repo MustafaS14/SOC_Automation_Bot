@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hmac
 import logging
+import time
+from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -70,16 +72,47 @@ def parse_alert(payload: Any) -> dict[str, Any]:
     }
 
 
+class RateLimiter:
+    """Sliding-window limit on requests per period."""
+
+    def __init__(self, limit: int, period: float = 60.0, clock: Callable[[], float] = time.monotonic):
+        self._limit = limit
+        self._period = period
+        self._clock = clock
+        self._hits: deque[float] = deque()
+
+    def allow(self) -> bool:
+        now = self._clock()
+        while self._hits and now - self._hits[0] >= self._period:
+            self._hits.popleft()
+        if len(self._hits) >= self._limit:
+            return False
+        self._hits.append(now)
+        return True
+
+
 def create_app(
     store: IncidentStore,
     secret: str,
     on_incident: Callable[[Incident], Awaitable[None]],
+    *,
+    max_per_minute: int = 30,
+    clock: Callable[[], float] = time.monotonic,
 ) -> web.Application:
+    if not secret.strip():
+        # compare_digest(b"", b"") is True, so an empty secret would accept anyone.
+        raise ValueError("The webhook secret must not be empty.")
+    if max_per_minute < 1:
+        raise ValueError("max_per_minute must be at least 1.")
+    limiter = RateLimiter(max_per_minute, clock=clock)
+
     async def splunk_alert(request: web.Request) -> web.Response:
-        # Splunk's built-in webhook cannot set headers, so a query-string token is accepted too.
-        supplied = request.headers.get("X-Webhook-Secret") or request.query.get("secret", "")
+        supplied = request.headers.get("X-Webhook-Secret", "")
         if not hmac.compare_digest(supplied.encode(), secret.encode()):
             return web.json_response({"error": "unauthorized"}, status=401)
+        # Only authenticated calls count, so strangers cannot lock Splunk out.
+        if not limiter.allow():
+            return web.json_response({"error": "rate limit exceeded"}, status=429, headers={"Retry-After": "60"})
         try:
             fields = parse_alert(await request.json())
         except (ValueError, ValidationError) as exc:

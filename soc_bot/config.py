@@ -55,7 +55,7 @@ def _host_map(name: str) -> dict[str, str]:
 
 @dataclass(frozen=True)
 class Settings:
-    discord_token: str
+    discord_token: str = field(repr=False)
     guild_id: int | None
     allowed_channel_ids: frozenset[int]
     audit_channel_id: int | None
@@ -69,6 +69,7 @@ class Settings:
     webhook_host: str = "127.0.0.1"
     webhook_port: int = 8765
     webhook_secret: str = field(default="", repr=False)
+    webhook_rate_limit: int = 30
     splunk_url: str = ""
     splunk_token: str = field(default="", repr=False)
     splunk_verify_tls: bool = True
@@ -101,6 +102,7 @@ class Settings:
             webhook_host=os.getenv("WEBHOOK_HOST", "127.0.0.1").strip(),
             webhook_port=_int_or_none("WEBHOOK_PORT") or 8765,
             webhook_secret=os.getenv("WEBHOOK_SECRET", "").strip(),
+            webhook_rate_limit=_int_or_none("WEBHOOK_RATE_LIMIT") or 30,
             splunk_url=os.getenv("SPLUNK_URL", "").strip().rstrip("/"),
             splunk_token=os.getenv("SPLUNK_TOKEN", "").strip(),
             splunk_verify_tls=_bool(os.getenv("SPLUNK_VERIFY_TLS", "true")),
@@ -110,8 +112,8 @@ class Settings:
             responder_ssh_key=os.getenv("RESPONDER_SSH_KEY", "").strip(),
             responder_known_hosts=os.getenv("RESPONDER_KNOWN_HOSTS", "").strip(),
             responder_hosts=_host_map("RESPONDER_HOSTS"),
-            abuseipdb_api_key=os.getenv("ABUSEIPDB_API_KEY") or None,
-            virustotal_api_key=os.getenv("VIRUSTOTAL_API_KEY") or None,
+            abuseipdb_api_key=os.getenv("ABUSEIPDB_API_KEY", "").strip() or None,
+            virustotal_api_key=os.getenv("VIRUSTOTAL_API_KEY", "").strip() or None,
             audit_log_path=os.getenv("AUDIT_LOG_PATH", "audit.jsonl"),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
         )
@@ -136,6 +138,8 @@ class Settings:
                     missing.extend(n for n, v in zip(names, values) if not v)
         if missing:
             raise ConfigError("Missing required settings: " + ", ".join(missing))
+        if self.webhook_rate_limit < 1:
+            raise ConfigError("WEBHOOK_RATE_LIMIT must be at least 1.")
         if not (self.read_role_ids or self.triage_role_ids or self.response_role_ids):
             raise ConfigError(
                 "No RBAC roles configured. Set RBAC_READ_ROLE_IDS / RBAC_TRIAGE_ROLE_IDS / "

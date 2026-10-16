@@ -57,3 +57,11 @@ def test_protected_hosts():
     assert is_protected_host("dc01", denylist)
     assert is_protected_host("dc01.corp.contoso.com", denylist)
     assert not is_protected_host("ws-fin-017", denylist)
+
+
+def test_protected_host_matches_full_name_and_short_name():
+    # A foreign domain must not hide a protected short name.
+    assert is_protected_host("dc01.evil.com", ("dc*",))
+    # An FQDN-only pattern matches the full name, not a bare short name.
+    assert is_protected_host("srv1.corp.local", ("*.corp.local",))
+    assert not is_protected_host("srv1", ("*.corp.local",))

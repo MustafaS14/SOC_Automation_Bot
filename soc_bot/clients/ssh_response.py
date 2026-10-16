@@ -35,12 +35,22 @@ class SshResponseClient:
         self._known_hosts = known_hosts
         self._timeout = timeout
 
-    def resolve(self, hostname: str) -> str:
-        """Map a validated hostname to its inventory address; unknown hosts are never contacted."""
-        address = self._hosts.get(hostname.lower().split(".", 1)[0])
-        if address is None:
-            raise NotFoundError(self.service, 404, f"`{hostname}` is not in the responder inventory")
-        return address
+    def resolve(self, hostname: str) -> tuple[str, str]:
+        """Return (inventory name, address) for a validated hostname.
+
+        A typed FQDN must equal an inventory entry exactly, so `dc01.evil.com` never maps to `dc01`.
+        Only a bare short name may match the short part of an inventory FQDN, and only if unique.
+        """
+        name = hostname.strip().lower()
+        if name in self._hosts:
+            return name, self._hosts[name]
+        if "." not in name:
+            matches = sorted(key for key in self._hosts if key.split(".", 1)[0] == name)
+            if len(matches) == 1:
+                return matches[0], self._hosts[matches[0]]
+            if matches:
+                raise APIError(self.service, 409, f"`{name}` is ambiguous, matches: {', '.join(matches)}")
+        raise NotFoundError(self.service, 404, f"`{name}` is not in the responder inventory")
 
     async def isolate(self, hostname: str) -> IsolationResult:
         return await self._run("isolate", hostname)
@@ -49,7 +59,7 @@ class SshResponseClient:
         return await self._run("unisolate", hostname)
 
     async def _run(self, action: str, hostname: str) -> IsolationResult:
-        address = self.resolve(hostname)
+        name, address = self.resolve(hostname)
         options: dict[str, object] = {}
         if self._known_hosts:
             options["known_hosts"] = self._known_hosts  # never pass None: asyncssh would skip host-key checks
@@ -68,5 +78,5 @@ class SshResponseClient:
             detail = str(result.stderr or result.stdout or "no output").strip()[:300]
             raise APIError(self.service, 500, f"{action} script exited {result.exit_status}: {detail}")
         return IsolationResult(
-            host=hostname, address=address, action=action, output=str(result.stdout or "").strip()[:300]
+            host=name, address=address, action=action, output=str(result.stdout or "").strip()[:300]
         )

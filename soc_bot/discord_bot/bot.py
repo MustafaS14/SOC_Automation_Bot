@@ -114,7 +114,9 @@ class SocBot(commands.Bot):
         if not s.webhook_secret:
             log.warning("WEBHOOK_SECRET not set: alert webhook disabled")
             return
-        app = webhook.create_app(self.store, s.webhook_secret, self.post_alert)
+        app = webhook.create_app(
+            self.store, s.webhook_secret, self.post_alert, max_per_minute=s.webhook_rate_limit
+        )
         self._web_runner = web.AppRunner(app)
         await self._web_runner.setup()
         await web.TCPSite(self._web_runner, s.webhook_host, s.webhook_port).start()

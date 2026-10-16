@@ -78,34 +78,37 @@ class ResponseCog(commands.Cog):
 
         await interaction.response.defer(thinking=True)
         incident = await self.bot.store.get(incident_id)
-        address = self.bot.ssh.resolve(hostname)
+        name, address = self.bot.ssh.resolve(hostname)
+        # The inventory name can differ from what was typed (short name -> FQDN), so check it again.
+        if verb == "Isolate" and await self._blocked(interaction, action_name, name):
+            return
 
         view = ConfirmView(interaction.user.id)
         await interaction.edit_original_response(
-            embed=embeds.isolation_confirm(verb, hostname, address, reason, incident), view=view
+            embed=embeds.isolation_confirm(verb, name, address, reason, incident), view=view
         )
         if not await view.ask():
             await interaction.edit_original_response(
-                embed=embeds.notice(f"{verb} of `{hostname}` cancelled."), view=None
+                embed=embeds.notice(f"{verb} of `{name}` cancelled."), view=None
             )
-            await self.bot.audit(interaction, action_name, hostname, "cancelled")
+            await self.bot.audit(interaction, action_name, name, "cancelled")
             return
 
         await interaction.edit_original_response(
-            embed=embeds.notice(f"Running {verb.lower()} on `{hostname}`..."), view=None
+            embed=embeds.notice(f"Running {verb.lower()} on `{name}`..."), view=None
         )
         actor = str(interaction.user)
         if verb == "Isolate":
-            result = await self.bot.ssh.isolate(hostname)
+            result = await self.bot.ssh.isolate(name)
         else:
-            result = await self.bot.ssh.unisolate(hostname)
+            result = await self.bot.ssh.unisolate(name)
 
         await self.bot.store.add_comment(
-            incident.id, actor, f"{verb} executed on {hostname} ({address}). Reason: {reason}"
+            incident.id, actor, f"{verb} executed on {name} ({address}). Reason: {reason}"
         )
         await interaction.edit_original_response(embed=embeds.isolation_result(result, actor, incident))
         await self.bot.audit(
-            interaction, action_name, hostname, "success",
+            interaction, action_name, name, "success",
             address=address, reason=reason, incident=incident.id,
         )
 

@@ -41,3 +41,39 @@ def test_responder_hosts_parsing(monkeypatch):
     monkeypatch.setenv("RESPONDER_HOSTS", "soc-victim=notanip")
     with pytest.raises(ConfigError):
         _host_map("RESPONDER_HOSTS")
+
+
+def test_secrets_are_not_in_repr():
+    text = repr(Settings(**{**BASE, "discord_token": "TOKEN123", "webhook_secret": "SECRET123",
+                            "splunk_token": "SPL123", "splunk_hec_token": "HEC123",
+                            "abuseipdb_api_key": "ABUSE123", "virustotal_api_key": "VT123"}))
+    for secret in ("TOKEN123", "SECRET123", "SPL123", "HEC123", "ABUSE123", "VT123"):
+        assert secret not in text
+
+
+def test_token_required_even_in_mock_mode():
+    # Mock mode still connects to Discord; tests build Settings directly and skip validate().
+    with pytest.raises(ConfigError, match="DISCORD_TOKEN"):
+        Settings(**{**BASE, "discord_token": "", "mock_mode": True}).validate()
+
+
+def test_rate_limit_must_be_positive():
+    with pytest.raises(ConfigError, match="WEBHOOK_RATE_LIMIT"):
+        Settings(**{**BASE, "webhook_rate_limit": 0}).validate()
+
+
+def test_from_env_strips_keys_and_defaults_to_loopback(monkeypatch):
+    monkeypatch.setattr("soc_bot.config.load_dotenv", lambda: None)
+    env = {
+        "DISCORD_TOKEN": " tok ", "ALLOWED_CHANNEL_IDS": "1", "RBAC_READ_ROLE_IDS": "2",
+        "WEBHOOK_SECRET": " s ", "ABUSEIPDB_API_KEY": "  abuse  ", "VIRUSTOTAL_API_KEY": "   ",
+    }
+    for name in ("WEBHOOK_HOST", "WEBHOOK_RATE_LIMIT", "SOC_BOT_MOCK", "SPLUNK_URL", "SPLUNK_TOKEN",
+                 "SPLUNK_HEC_URL", "SPLUNK_HEC_TOKEN", "RESPONDER_HOSTS", "RESPONDER_SSH_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    settings = Settings.from_env()
+    assert settings.discord_token == "tok" and settings.webhook_secret == "s"
+    assert settings.abuseipdb_api_key == "abuse" and settings.virustotal_api_key is None
+    assert settings.webhook_host == "127.0.0.1" and settings.webhook_rate_limit == 30

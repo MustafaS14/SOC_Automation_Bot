@@ -59,9 +59,24 @@ async def test_webhook_stores_and_posts(client):
     assert [i.id for i in client.posted] == [1]
 
 
-async def test_webhook_accepts_query_secret_for_splunk_builtin_action(client):
+async def test_query_string_secret_is_not_accepted(client):
     resp = await client.post("/webhook/splunk?secret=s3cret", json=SPLUNK_PAYLOAD)
-    assert resp.status == 201
+    assert resp.status == 401
+    assert await client.store.list(status="all") == []
+
+
+@pytest.mark.parametrize("secret", ["", "   "])
+def test_create_app_rejects_empty_secret(secret):
+    async def on_incident(incident):
+        pass
+
+    with pytest.raises(ValueError):
+        create_app(IncidentStore(":memory:"), secret, on_incident)
+
+
+async def test_empty_header_is_rejected_when_secret_is_set(client):
+    resp = await client.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers={"X-Webhook-Secret": ""})
+    assert resp.status == 401
 
 
 @pytest.mark.parametrize("headers", [{}, {"X-Webhook-Secret": "wrong"}])
@@ -76,3 +91,49 @@ async def test_webhook_rejects_bad_json_and_oversize(client):
     assert (await client.post("/webhook/splunk", data=b"{nope", headers=headers)).status == 400
     assert (await client.post("/webhook/splunk", json={"x": 1}, headers=headers)).status == 400
     assert (await client.post("/webhook/splunk", data=b"x" * 70_000, headers=headers)).status == 413
+
+
+class FakeClock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+async def test_rate_limit_blocks_floods_and_recovers():
+    store = IncidentStore(":memory:")
+    posted = []
+    clock = FakeClock()
+
+    async def on_incident(incident):
+        posted.append(incident)
+
+    headers = {"X-Webhook-Secret": "s3cret"}
+    app = create_app(store, "s3cret", on_incident, max_per_minute=3, clock=clock)
+    async with TestClient(TestServer(app)) as c:
+        statuses = [(await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers=headers)).status for _ in range(5)]
+        assert statuses == [201, 201, 201, 429, 429]
+        assert len(await store.list(status="all")) == 3 and len(posted) == 3
+
+        limited = await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers=headers)
+        assert limited.headers["Retry-After"] == "60"
+
+        clock.now = 61
+        assert (await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers=headers)).status == 201
+    store.shutdown()
+
+
+async def test_unauthenticated_requests_do_not_consume_the_rate_limit():
+    store = IncidentStore(":memory:")
+
+    async def on_incident(incident):
+        pass
+
+    app = create_app(store, "s3cret", on_incident, max_per_minute=1, clock=FakeClock())
+    async with TestClient(TestServer(app)) as c:
+        for _ in range(5):
+            assert (await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD)).status == 401
+        ok = await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers={"X-Webhook-Secret": "s3cret"})
+        assert ok.status == 201
+    store.shutdown()
