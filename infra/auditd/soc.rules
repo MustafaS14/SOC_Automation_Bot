@@ -1,0 +1,5 @@
+## SOC lab: log every executed command on the victim.
+## Install: sudo cp soc.rules /etc/audit/rules.d/soc.rules && sudo augenrules --load
+## Verify:  sudo auditctl -l
+## Search:  sudo ausearch -k exec_cmd -i --start recent
+-a always,exit -F arch=b64 -S execve -k exec_cmd
