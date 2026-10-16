@@ -1,0 +1,2 @@
+*.sh text eol=lf
+infra/responder/soc-* text eol=lf

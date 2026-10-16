@@ -13,11 +13,11 @@ class AuditLogger:
     """Append-only JSON Lines audit trail of every command and its outcome."""
 
     def __init__(self, path: str | Path):
-        file_handler = logging.FileHandler(path, encoding="utf-8")
-        file_handler.setFormatter(logging.Formatter("%(message)s"))
+        self._file_handler = logging.FileHandler(path, encoding="utf-8")
+        self._file_handler.setFormatter(logging.Formatter("%(message)s"))
         # Disk writes happen on a background thread so the event loop never blocks.
         records: queue.SimpleQueue[logging.LogRecord] = queue.SimpleQueue()
-        self._listener = QueueListener(records, file_handler)
+        self._listener = QueueListener(records, self._file_handler)
         self._listener.start()
         self._logger = logging.getLogger("soc_bot.audit")
         self._logger.propagate = False
@@ -26,6 +26,7 @@ class AuditLogger:
 
     def close(self) -> None:
         self._listener.stop()
+        self._file_handler.close()
 
     def record(
         self,

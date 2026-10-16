@@ -1,0 +1,2 @@
+# Install as /etc/sudoers.d/responder (0440) and check with: visudo -cf /etc/sudoers.d/responder
+responder ALL=(root) NOPASSWD: /usr/local/sbin/soc-isolate, /usr/local/sbin/soc-unisolate

@@ -5,4 +5,5 @@ venv/
 .env
 *.log
 audit.jsonl
+incidents.db
 .pytest_cache/

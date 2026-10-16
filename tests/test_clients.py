@@ -1,142 +1,93 @@
-import json
-from types import SimpleNamespace
-
 import httpx
 import pytest
 
-from soc_bot.clients import APIError, DefenderClient, NotFoundError, SentinelClient
-
-BASE = (
-    "/subscriptions/sub/resourceGroups/rg/providers/Microsoft.OperationalInsights"
-    "/workspaces/ws/providers/Microsoft.SecurityInsights"
-)
+from soc_bot.clients import APIError, HecClient, NotFoundError, SplunkClient, SshResponseClient
+from soc_bot.models import IpReport
 
 
-class FakeCredential:
-    def __init__(self):
-        self.scopes = []
-
-    async def get_token(self, *scopes, **_):
-        self.scopes.extend(scopes)
-        return SimpleNamespace(token="fake-token")
-
-
-def incident_json(number=1042, status="New"):
-    return {
-        "name": "0b3f8a9e-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
-        "etag": '"etag-1"',
-        "properties": {
-            "incidentNumber": number,
-            "title": "Suspicious PowerShell",
-            "severity": "High",
-            "status": status,
-            "description": "desc",
-            "labels": [],
-            "createdTimeUtc": "2026-10-13T10:00:00Z",
-            "additionalData": {"alertsCount": 3, "tactics": ["Execution"]},
-            "incidentUrl": "https://portal.azure.com/#incident",
-        },
-    }
-
-
-def make_client(handler):
-    cred = FakeCredential()
+def make_splunk(handler):
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    client = SentinelClient(
-        subscription_id="sub", resource_group="rg", workspace_name="ws", credential=cred, http=http
-    )
-    return client, cred
+    return SplunkClient(http=http, base_url="https://splunk:8089/", token="tok")
 
 
-async def test_list_incidents_builds_odata_query():
+async def test_search_posts_form_and_parses_ndjson():
     seen = {}
 
     def handler(request: httpx.Request):
         seen["path"] = request.url.path
-        seen["params"] = dict(request.url.params)
         seen["auth"] = request.headers["Authorization"]
-        return httpx.Response(200, json={"value": [incident_json()]})
+        seen["form"] = dict(httpx.QueryParams(request.content.decode()))
+        body = '{"preview":false,"result":{"host":"soc-victim"}}\n{"lastrow":true}\nnot json\n'
+        return httpx.Response(200, text=body)
 
-    client, cred = make_client(handler)
-    incidents = await client.list_incidents(status="open", severity="High", top=5)
+    rows = await make_splunk(handler).search("search index=linux | head 1", earliest="-15m")
 
-    assert seen["path"] == BASE + "/incidents"
-    assert seen["params"]["$filter"] == "properties/status ne 'Closed' and properties/severity eq 'High'"
-    assert seen["params"]["$top"] == "5"
-    assert seen["params"]["api-version"] == "2024-03-01"
-    assert seen["auth"] == "Bearer fake-token"
-    assert cred.scopes == ["https://management.azure.com/.default"]
-    assert incidents[0].number == 1042 and incidents[0].alerts_count == 3
+    assert seen["path"] == "/services/search/jobs/export"
+    assert seen["auth"] == "Bearer tok"
+    assert seen["form"]["earliest_time"] == "-15m" and seen["form"]["output_mode"] == "json"
+    assert rows == [{"host": "soc-victim"}]
 
 
-async def test_list_rejects_unknown_severity():
-    client, _ = make_client(lambda r: httpx.Response(200, json={"value": []}))
-    with pytest.raises(ValueError):
-        await client.list_incidents(severity="High' or 1 eq 1")
-
-
-async def test_resolve_by_number_not_found():
-    client, _ = make_client(lambda r: httpx.Response(200, json={"value": []}))
-    with pytest.raises(NotFoundError):
-        await client.resolve_incident(9999)
-
-
-async def test_close_incident_sends_classification_and_etag():
-    captured = {}
-
-    def handler(request: httpx.Request):
-        if request.method == "PUT":
-            captured["path"] = request.url.path
-            captured["body"] = json.loads(request.content)
-            closed = incident_json(status="Closed")
-            closed["properties"]["classification"] = "TruePositive"
-            return httpx.Response(200, json=closed)
-        return httpx.Response(200, json={"value": [incident_json()]})
-
-    client, _ = make_client(handler)
-    incident = await client.resolve_incident(1042)
-    updated = await client.close_incident(incident, "tp_suspicious", "confirmed malware")
-
-    props = captured["body"]["properties"]
-    assert captured["path"] == f"{BASE}/incidents/{incident.id}"
-    assert captured["body"]["etag"] == '"etag-1"'
-    assert props["status"] == "Closed"
-    assert props["classification"] == "TruePositive"
-    assert props["classificationReason"] == "SuspiciousActivity"
-    assert updated.status == "Closed"
-
-
-async def test_api_errors_are_surfaced():
-    client, _ = make_client(
-        lambda r: httpx.Response(403, json={"error": {"code": "AuthorizationFailed", "message": "nope"}})
+async def test_splunk_error_text_is_surfaced():
+    client = make_splunk(
+        lambda r: httpx.Response(400, json={"messages": [{"type": "FATAL", "text": "Unknown search command 'foo'."}]})
     )
     with pytest.raises(APIError) as exc:
-        await client.list_incidents()
-    assert exc.value.status == 403 and exc.value.message == "nope"
+        await client.search("search | foo")
+    assert exc.value.status == 400 and "Unknown search command" in exc.value.message
 
 
-async def test_defender_find_and_isolate():
-    calls = []
+async def test_splunk_unreachable_maps_to_api_error():
+    def handler(request):
+        raise httpx.ConnectError("refused")
+
+    with pytest.raises(APIError) as exc:
+        await make_splunk(handler).search("search *")
+    assert exc.value.status == 502
+
+
+async def test_splunk_404_is_not_found():
+    with pytest.raises(NotFoundError):
+        await make_splunk(lambda r: httpx.Response(404, json={})).search("search *")
+
+
+async def test_hec_sends_event_and_swallows_failures():
+    seen = {}
 
     def handler(request: httpx.Request):
-        calls.append(request)
-        if request.method == "GET":
-            return httpx.Response(200, json={"value": [
-                {"id": "abc123", "computerDnsName": "ws-fin-017.corp.contoso.com", "healthStatus": "Active"},
-                {"id": "def456", "computerDnsName": "ws-fin-0170.corp.contoso.com", "healthStatus": "Active"},
-            ]})
-        return httpx.Response(201, json={"id": "act-1", "type": "Isolate", "status": "Pending", "machineId": "abc123"})
+        seen["auth"] = request.headers["Authorization"]
+        seen["body"] = request.content.decode()
+        return httpx.Response(200, json={"text": "Success", "code": 0})
 
-    cred = FakeCredential()
     http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
-    client = DefenderClient(credential=cred, http=http, api_base="https://api.securitycenter.microsoft.com")
+    await HecClient(http=http, url="https://splunk:8088/services/collector/event", token="hec").send({"a": 1})
+    assert seen["auth"] == "Splunk hec"
+    assert '"index":"soc_audit"' in seen["body"].replace(" ", "")
 
-    machine = await client.find_machine("ws-fin-017")
-    assert machine.id == "abc123"
-    action = await client.isolate(machine.id, "test", "Full")
+    failing = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(403, json={"text": "Invalid token"})))
+    await HecClient(http=failing, url="https://x", token="bad").send({"a": 1})  # must not raise
 
-    assert calls[0].url.params["$filter"] == "startswith(computerDnsName,'ws-fin-017')"
-    assert calls[1].url.path == "/api/machines/abc123/isolate"
-    assert json.loads(calls[1].content) == {"Comment": "test", "IsolationType": "Full"}
-    assert action.status == "Pending"
-    assert cred.scopes[0] == "https://api.securitycenter.microsoft.com/.default"
+
+def test_ssh_inventory_is_an_allowlist():
+    client = SshResponseClient(hosts={"soc-victim": "192.168.56.20"}, user="responder", key_path="k")
+    assert client.resolve("SOC-VICTIM.lab.local") == "192.168.56.20"
+    with pytest.raises(NotFoundError):
+        client.resolve("dc01")
+
+
+def test_verdict_is_incomplete_when_a_lookup_failed():
+    report = IpReport(ip="8.8.8.8", is_public=True, abuse_score=0, errors=["VirusTotal: ReadTimeout"])
+    assert report.verdict == "Incomplete"
+    report.errors.clear()
+    assert report.verdict == "Clean"
+
+
+def test_verdict_levels():
+    assert IpReport(ip="10.0.0.1", is_public=False).verdict == "Internal"
+    assert IpReport(ip="1.1.1.1", is_public=True).verdict == "Unknown"
+    assert IpReport(ip="1.1.1.1", is_public=True, abuse_score=75).verdict == "Malicious"
+    assert IpReport(ip="1.1.1.1", is_public=True, vt_malicious=5).verdict == "Malicious"
+    assert IpReport(ip="1.1.1.1", is_public=True, abuse_score=25).verdict == "Suspicious"
+    assert IpReport(ip="1.1.1.1", is_public=True, vt_malicious=0, vt_suspicious=2).verdict == "Suspicious"
+    # Real findings still win over a failed second lookup.
+    assert IpReport(ip="1.1.1.1", is_public=True, abuse_score=90, errors=["x"]).verdict == "Malicious"

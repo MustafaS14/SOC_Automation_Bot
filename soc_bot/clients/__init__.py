@@ -1,6 +1,14 @@
-from .base import APIError, NotFoundError
-from .defender import DefenderClient
+from .base import APIError, NotConfiguredError, NotFoundError
 from .enrichment import EnrichmentClient
-from .sentinel import SentinelClient
+from .splunk import HecClient, SplunkClient
+from .ssh_response import SshResponseClient
 
-__all__ = ["APIError", "NotFoundError", "DefenderClient", "EnrichmentClient", "SentinelClient"]
+__all__ = [
+    "APIError",
+    "EnrichmentClient",
+    "HecClient",
+    "NotConfiguredError",
+    "NotFoundError",
+    "SplunkClient",
+    "SshResponseClient",
+]

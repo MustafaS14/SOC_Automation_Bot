@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-from collections import defaultdict
 from datetime import datetime
 from typing import Any
 
 import discord
 from discord.utils import escape_markdown, format_dt
 
-from ..models import Entity, Incident, IpReport, Machine, MachineAction
+from ..models import Incident, IpReport, IsolationResult
 
 SEVERITY_COLORS = {
     "High": discord.Color.red(),
@@ -21,6 +20,7 @@ VERDICT_COLORS = {
     "Clean": discord.Color.green(),
     "Internal": discord.Color.greyple(),
     "Unknown": discord.Color.light_grey(),
+    "Incomplete": discord.Color.light_grey(),
 }
 
 
@@ -36,53 +36,47 @@ def _when(dt: datetime | None) -> str:
     return format_dt(dt, "R") if dt else "n/a"
 
 
+def _label(classification: str | None) -> str:
+    return (classification or "n/a").replace("_", " ").title()
+
+
 def incident_list(incidents: list[Incident], status: str, severity: str | None) -> discord.Embed:
-    title = f"Sentinel incidents - {status}" + (f" / {severity}" if severity else "")
+    title = f"Incidents - {status}" + (f" / {severity}" if severity else "")
     embed = discord.Embed(title=title, color=discord.Color.blurple())
     if not incidents:
         embed.description = "No incidents match this filter."
         return embed
     lines = []
     for i in incidents:
-        owner = _md(i.owner, 60) if i.owner else "unassigned"
+        owner = _md(i.assignee, 60) if i.assignee else "unassigned"
+        target = _md(i.host, 60) if i.host else "no host"
         lines.append(
-            f"**#{i.number}** `{i.severity.upper():<13}` `{i.status:<6}` {_md(i.title, 90)}\n"
-            f"-# {i.alerts_count} alert(s) | {owner} | created {_when(i.created)}"
+            f"**#{i.id}** `{i.severity.upper():<13}` `{i.status:<6}` {_md(i.rule, 90)}\n"
+            f"-# {target} | {owner} | created {_when(i.created)}"
         )
     embed.description = _t("\n".join(lines), 4000)
     embed.set_footer(text="Use /incident show <number> for details")
     return embed
 
 
-def incident_detail(incident: Incident, entities: list[Entity]) -> discord.Embed:
+def incident_detail(incident: Incident) -> discord.Embed:
     embed = discord.Embed(
-        title=_t(f"#{incident.number} - {incident.title}", 256),
+        title=_t(f"#{incident.id} - {incident.rule}", 256),
         url=incident.url,
         description=_md(incident.description, 1000) or None,
         color=SEVERITY_COLORS.get(incident.severity, discord.Color.default()),
     )
     embed.add_field(name="Severity", value=incident.severity)
     embed.add_field(name="Status", value=incident.status)
-    embed.add_field(name="Owner", value=_md(incident.owner, 100) if incident.owner else "unassigned")
-    embed.add_field(name="Alerts", value=str(incident.alerts_count))
+    embed.add_field(name="Assignee", value=_md(incident.assignee, 100) if incident.assignee else "unassigned")
+    embed.add_field(name="Host", value=_md(incident.host, 100) if incident.host else "n/a")
+    embed.add_field(name="Source IP", value=f"`{incident.src_ip}`" if incident.src_ip else "n/a")
     embed.add_field(name="Created", value=_when(incident.created))
     if incident.classification:
-        embed.add_field(name="Classification", value=incident.classification)
-    if incident.tactics:
-        embed.add_field(name="MITRE tactics", value=_md(", ".join(incident.tactics)), inline=False)
-    if incident.products:
-        embed.add_field(name="Sources", value=_md(", ".join(incident.products)), inline=False)
-
-    grouped: dict[str, list[str]] = defaultdict(list)
-    for entity in entities:
-        grouped[entity.kind].append(entity.name)
-    for kind, names in list(grouped.items())[:8]:
-        shown = ", ".join(f"`{escape_markdown(n)}`" for n in names[:10])
-        if len(names) > 10:
-            shown += f" (+{len(names) - 10} more)"
-        embed.add_field(name=f"{kind} entities", value=_t(shown, 1024), inline=False)
-
-    embed.set_footer(text=f"Incident ID {incident.id}")
+        embed.add_field(name="Classification", value=_label(incident.classification))
+    if incident.comments:
+        lines = [f"**{_md(c.author, 60)}**: {_md(c.body, 200)}" for c in incident.comments[-5:]]
+        embed.add_field(name=f"Comments ({len(incident.comments)})", value=_t("\n".join(lines), 1024), inline=False)
     return embed
 
 
@@ -124,8 +118,8 @@ def ip_report(report: IpReport) -> discord.Embed:
 
 def close_confirm(incident: Incident, label: str, comment: str) -> discord.Embed:
     embed = discord.Embed(
-        title=f"Close incident #{incident.number}?",
-        description=_md(incident.title, 500),
+        title=f"Close incident #{incident.id}?",
+        description=_md(incident.rule, 500),
         color=discord.Color.orange(),
     )
     embed.add_field(name="Classification", value=label, inline=False)
@@ -134,57 +128,56 @@ def close_confirm(incident: Incident, label: str, comment: str) -> discord.Embed
     return embed
 
 
-def comment_status(commented: bool) -> str:
-    return "Audit comment added" if commented else "WARNING: audit comment failed - add one manually"
-
-
-def incident_closed(incident: Incident, actor: str, commented: bool) -> discord.Embed:
+def incident_closed(incident: Incident, actor: str) -> discord.Embed:
     embed = discord.Embed(
-        title=f"Incident #{incident.number} closed",
-        description=_md(incident.title, 500),
+        title=f"Incident #{incident.id} closed",
+        description=_md(incident.rule, 500),
         url=incident.url,
         color=discord.Color.green(),
     )
-    embed.add_field(name="Classification", value=incident.classification or "n/a")
+    embed.add_field(name="Classification", value=_label(incident.classification))
     embed.add_field(name="Closed by", value=_md(actor, 100))
-    embed.set_footer(text=comment_status(commented))
     return embed
 
 
-def device_action_confirm(
-    machine: Machine, verb: str, reason: str, isolation_type: str | None, incident: Incident
+def isolation_confirm(
+    verb: str, hostname: str, address: str, reason: str, incident: Incident
 ) -> discord.Embed:
     embed = discord.Embed(
-        title=f"{verb} device {machine.name}?",
+        title=f"{verb} host {_t(escape_markdown(hostname), 200)}?",
         color=discord.Color.red() if verb == "Isolate" else discord.Color.orange(),
     )
-    embed.add_field(name="Device ID", value=f"`{machine.id}`", inline=False)
-    embed.add_field(name="OS", value=machine.os_platform or "n/a")
-    embed.add_field(name="Health", value=machine.health_status or "n/a")
-    embed.add_field(name="Risk", value=machine.risk_score or "n/a")
-    embed.add_field(name="Last IP", value=machine.last_ip or "n/a")
-    embed.add_field(name="Last seen", value=_when(machine.last_seen))
-    if isolation_type:
-        embed.add_field(name="Isolation type", value=isolation_type)
-    embed.add_field(name="Linked incident", value=f"#{incident.number} - {_md(incident.title, 200)}", inline=False)
+    embed.add_field(name="Address", value=f"`{address}`")
+    embed.add_field(name="Linked incident", value=f"#{incident.id} - {_md(incident.rule, 200)}", inline=False)
     embed.add_field(name="Reason", value=_md(reason), inline=False)
     embed.set_footer(text="Confirm within 60 seconds")
     return embed
 
 
-def device_action_result(
-    machine: Machine, action: MachineAction, actor: str, incident: Incident, commented: bool
-) -> discord.Embed:
+def isolation_result(result: IsolationResult, actor: str, incident: Incident) -> discord.Embed:
     embed = discord.Embed(
-        title=f"{action.type} submitted for {machine.name}",
-        description="Track progress in the Defender portal Action center.",
+        title=f"{result.action.capitalize()} completed for {_t(escape_markdown(result.host), 200)}",
         color=discord.Color.green(),
     )
-    embed.add_field(name="Action ID", value=f"`{action.id}`", inline=False)
-    embed.add_field(name="Status", value=action.status or "Pending")
+    embed.add_field(name="Address", value=f"`{result.address}`")
     embed.add_field(name="Requested by", value=_md(actor, 100))
-    embed.add_field(name="Incident", value=f"#{incident.number}")
-    embed.set_footer(text=comment_status(commented))
+    embed.add_field(name="Incident", value=f"#{incident.id}")
+    if result.output:
+        embed.add_field(name="Script output", value=_md(result.output, 300), inline=False)
+    return embed
+
+
+def hunt_results(label: str, window: str, rows: list[dict[str, Any]]) -> discord.Embed:
+    embed = discord.Embed(title=f"Hunt - {_t(label, 200)} ({window})", color=discord.Color.blurple())
+    if not rows:
+        embed.description = "No events found."
+        return embed
+    lines = [" | ".join(f"{k}={v}" for k, v in row.items() if not k.startswith("_") or k in {"_time", "_raw"})
+             for row in rows]
+    # A triple backtick in log data would end the code block early.
+    body = "\n".join(lines).replace("```", "'''")
+    embed.description = f"```\n{_t(body, 3900)}\n```"
+    embed.set_footer(text=f"{len(rows)} row(s)")
     return embed
 
 

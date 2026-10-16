@@ -28,5 +28,9 @@ def test_highest_role_wins():
 def test_channel_allowlist():
     assert POLICY.channel_allowed(100)
     assert not POLICY.channel_allowed(200)
-    open_policy = AccessPolicy(frozenset(), frozenset(), frozenset())
-    assert open_policy.channel_allowed(200)
+    assert not POLICY.channel_allowed(None)
+
+
+def test_empty_channel_list_allows_nothing():
+    policy = AccessPolicy(frozenset({1}), frozenset(), frozenset())
+    assert not policy.channel_allowed(200)

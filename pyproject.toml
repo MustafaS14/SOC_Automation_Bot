@@ -1,7 +1,7 @@
 [project]
 name = "soc-bot"
 version = "0.1.0"
-description = "ChatOps bot for Microsoft Sentinel incident triage"
+description = "ChatOps bot for Splunk alert triage and SSH containment in a local SOC lab"
 requires-python = ">=3.10"
 
 [tool.pytest.ini_options]

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 from dataclasses import dataclass, field
 
@@ -36,6 +37,22 @@ def _str_list(name: str) -> tuple[str, ...]:
     return tuple(p.strip().lower() for p in os.getenv(name, "").split(",") if p.strip())
 
 
+def _host_map(name: str) -> dict[str, str]:
+    hosts: dict[str, str] = {}
+    for part in os.getenv(name, "").split(","):
+        if not part.strip():
+            continue
+        host, _, address = part.partition("=")
+        host = host.strip().lower()
+        try:
+            if not host:
+                raise ValueError(host)
+            hosts[host] = str(ipaddress.ip_address(address.strip()))
+        except ValueError as exc:
+            raise ConfigError(f"{name} must look like host=ip,host=ip") from exc
+    return hosts
+
+
 @dataclass(frozen=True)
 class Settings:
     discord_token: str
@@ -47,11 +64,20 @@ class Settings:
     response_role_ids: frozenset[int]
     isolation_denylist: tuple[str, ...]
     mock_mode: bool
-    subscription_id: str = ""
-    resource_group: str = ""
-    workspace_name: str = ""
-    sentinel_api_version: str = "2024-03-01"
-    defender_api_base: str = "https://api.securitycenter.microsoft.com"
+    alert_channel_id: int | None = None
+    db_path: str = "incidents.db"
+    webhook_host: str = "127.0.0.1"
+    webhook_port: int = 8765
+    webhook_secret: str = field(default="", repr=False)
+    splunk_url: str = ""
+    splunk_token: str = field(default="", repr=False)
+    splunk_verify_tls: bool = True
+    splunk_hec_url: str = ""
+    splunk_hec_token: str = field(default="", repr=False)
+    responder_user: str = "responder"
+    responder_ssh_key: str = ""
+    responder_known_hosts: str = ""
+    responder_hosts: dict[str, str] = field(default_factory=dict)
     abuseipdb_api_key: str | None = field(default=None, repr=False)
     virustotal_api_key: str | None = field(default=None, repr=False)
     audit_log_path: str = "audit.jsonl"
@@ -70,13 +96,20 @@ class Settings:
             response_role_ids=_id_set("RBAC_RESPONSE_ROLE_IDS"),
             isolation_denylist=_str_list("ISOLATION_DENYLIST"),
             mock_mode=_bool(os.getenv("SOC_BOT_MOCK")),
-            subscription_id=os.getenv("SENTINEL_SUBSCRIPTION_ID", "").strip(),
-            resource_group=os.getenv("SENTINEL_RESOURCE_GROUP", "").strip(),
-            workspace_name=os.getenv("SENTINEL_WORKSPACE_NAME", "").strip(),
-            sentinel_api_version=os.getenv("SENTINEL_API_VERSION", "2024-03-01").strip(),
-            defender_api_base=os.getenv(
-                "DEFENDER_API_BASE", "https://api.securitycenter.microsoft.com"
-            ).strip().rstrip("/"),
+            alert_channel_id=_int_or_none("ALERT_CHANNEL_ID"),
+            db_path=os.getenv("DB_PATH", "incidents.db").strip(),
+            webhook_host=os.getenv("WEBHOOK_HOST", "127.0.0.1").strip(),
+            webhook_port=_int_or_none("WEBHOOK_PORT") or 8765,
+            webhook_secret=os.getenv("WEBHOOK_SECRET", "").strip(),
+            splunk_url=os.getenv("SPLUNK_URL", "").strip().rstrip("/"),
+            splunk_token=os.getenv("SPLUNK_TOKEN", "").strip(),
+            splunk_verify_tls=_bool(os.getenv("SPLUNK_VERIFY_TLS", "true")),
+            splunk_hec_url=os.getenv("SPLUNK_HEC_URL", "").strip(),
+            splunk_hec_token=os.getenv("SPLUNK_HEC_TOKEN", "").strip(),
+            responder_user=os.getenv("RESPONDER_USER", "responder").strip(),
+            responder_ssh_key=os.getenv("RESPONDER_SSH_KEY", "").strip(),
+            responder_known_hosts=os.getenv("RESPONDER_KNOWN_HOSTS", "").strip(),
+            responder_hosts=_host_map("RESPONDER_HOSTS"),
             abuseipdb_api_key=os.getenv("ABUSEIPDB_API_KEY") or None,
             virustotal_api_key=os.getenv("VIRUSTOTAL_API_KEY") or None,
             audit_log_path=os.getenv("AUDIT_LOG_PATH", "audit.jsonl"),
@@ -89,18 +122,26 @@ class Settings:
         missing = []
         if not self.discord_token:
             missing.append("DISCORD_TOKEN")
+        if not self.mock_mode and not self.webhook_secret:
+            missing.append("WEBHOOK_SECRET")
+        # Each backend is optional, but a half-configured one is an error.
+        pairs = (
+            (("SPLUNK_URL", "SPLUNK_TOKEN"), (self.splunk_url, self.splunk_token)),
+            (("SPLUNK_HEC_URL", "SPLUNK_HEC_TOKEN"), (self.splunk_hec_url, self.splunk_hec_token)),
+            (("RESPONDER_HOSTS", "RESPONDER_SSH_KEY"), (self.responder_hosts, self.responder_ssh_key)),
+        )
         if not self.mock_mode:
-            for name, value in (
-                ("SENTINEL_SUBSCRIPTION_ID", self.subscription_id),
-                ("SENTINEL_RESOURCE_GROUP", self.resource_group),
-                ("SENTINEL_WORKSPACE_NAME", self.workspace_name),
-            ):
-                if not value:
-                    missing.append(name)
+            for names, values in pairs:
+                if any(values) and not all(values):
+                    missing.extend(n for n, v in zip(names, values) if not v)
         if missing:
             raise ConfigError("Missing required settings: " + ", ".join(missing))
         if not (self.read_role_ids or self.triage_role_ids or self.response_role_ids):
             raise ConfigError(
                 "No RBAC roles configured. Set RBAC_READ_ROLE_IDS / RBAC_TRIAGE_ROLE_IDS / "
                 "RBAC_RESPONSE_ROLE_IDS so the bot is not open to everyone."
+            )
+        if not self.allowed_channel_ids:
+            raise ConfigError(
+                "No channels configured. Set ALLOWED_CHANNEL_IDS so commands are not accepted everywhere."
             )

@@ -10,17 +10,27 @@ from soc_bot.validators import (
 )
 
 
-def test_incident_ref_number_and_guid():
+def test_incident_ref_number():
     assert parse_incident_ref("1042") == 1042
     assert parse_incident_ref("#7") == 7
-    guid = "0b3f8a9e-1c2d-4e5f-8a9b-0c1d2e3f4a5b"
-    assert parse_incident_ref(guid.upper()) == guid
 
 
-@pytest.mark.parametrize("value", ["0", "abc", "1 or 1=1", "' or ''='", "../../x"])
+@pytest.mark.parametrize(
+    "value",
+    ["0", "abc", "1 or 1=1", "' or ''='", "../../x", "\u00b2", "\u0663", "1" * 30,
+     "0b3f8a9e-1c2d-4e5f-8a9b-0c1d2e3f4a5b"],
+)
 def test_incident_ref_rejects_garbage(value):
     with pytest.raises(ValidationError):
         parse_incident_ref(value)
+
+
+@pytest.mark.parametrize("parse", [parse_incident_ref, parse_ip, parse_hostname])
+def test_errors_do_not_echo_markdown_breaking_characters(parse):
+    with pytest.raises(ValidationError) as exc:
+        parse("a`**b|\n@everyone`")
+    message = str(exc.value)
+    assert message.count("`") == 2 and "**" not in message and "\n" not in message and "@" not in message
 
 
 def test_ip_parsing():

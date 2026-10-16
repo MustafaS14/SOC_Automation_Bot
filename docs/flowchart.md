@@ -1,84 +1,81 @@
-# Command → Azure REST API flow
+# Command → backend flow
 
-Every slash command passes through the same guard pipeline before any API call is made.
+Every slash command and alert button passes through the same guard pipeline before any backend call is made.
 
 ## Request pipeline
 
 ```mermaid
 flowchart TD
-    A[Analyst types slash command in Discord] --> B{Guild + channel allowed?}
+    A[Analyst types slash command or presses an alert button] --> B{Guild + channel allowed?}
     B -- no --> X[Ephemeral 'Access denied'<br/>audit: denied]
     B -- yes --> C{Role tier >= required tier?<br/>READ / TRIAGE / RESPONSE}
     C -- no --> X
-    C -- yes --> D{Input validation<br/>incident ref, IP, hostname}
+    C -- yes --> D{Input validation<br/>incident number, IP, hostname, hunt target}
     D -- invalid --> Y[Ephemeral validation error]
     D -- valid --> E{Destructive action?<br/>close / isolate / unisolate}
-    E -- no --> F[Call Azure API]
+    E -- no --> F[Call backend]
     E -- yes --> G{Host on deny-list?}
     G -- yes --> Z[Blocked<br/>audit: blocked]
     G -- no --> H[Confirm / Cancel buttons<br/>requester only, 60s]
     H -- cancel / timeout --> W[Cancelled<br/>audit: cancelled]
     H -- confirm --> F
     F --> I[Render embed in channel]
-    I --> J[Audit: JSONL file + audit channel]
+    I --> J[Audit: JSONL file + audit channel + Splunk HEC]
 ```
 
-## Command → endpoint map
+## Command → backend map
 
 ```mermaid
 flowchart LR
-    subgraph Discord["Discord slash commands"]
+    subgraph Discord["Discord"]
         L["/incident list"]
         S["/incident show"]
         C["/incident comment"]
         CL["/incident close"]
         EN["/enrich"]
+        HU["/hunt"]
         IS["/isolate"]
         UN["/unisolate"]
+        BTN["Alert buttons<br/>Acknowledge / Enrich / Isolate"]
     end
 
-    subgraph AAD["Microsoft Entra ID (DefaultAzureCredential)"]
-        T1["token: management.azure.com/.default"]
-        T2["token: api.securitycenter.microsoft.com/.default"]
+    subgraph DB["SQLite incident store"]
+        D1["incidents"]
+        D2["comments"]
     end
 
-    subgraph ARM["Microsoft Sentinel REST API<br/>management.azure.com/.../workspaces/{ws}/providers/Microsoft.SecurityInsights"]
-        A1["GET /incidents?$filter&$orderby&$top"]
-        A2["GET /incidents/{id}"]
-        A3["POST /incidents/{id}/entities"]
-        A4["PUT /incidents/{id}/comments/{commentId}"]
-        A5["PUT /incidents/{id}<br/>status=Closed + classification + etag"]
+    subgraph SPL["Splunk"]
+        P1["REST :8089<br/>POST /services/search/jobs/export"]
+        P2["HEC :8088<br/>index soc_audit"]
+        P3["Alert webhook"]
     end
 
-    subgraph MDE["Defender for Endpoint API<br/>api.securitycenter.microsoft.com"]
-        M1["GET /api/machines?$filter=startswith(computerDnsName,...)"]
-        M2["POST /api/machines/{id}/isolate"]
-        M3["POST /api/machines/{id}/unisolate"]
+    subgraph VIC["soc-victim (SSH as responder)"]
+        V1["sudo soc-isolate"]
+        V2["sudo soc-unisolate"]
     end
 
     subgraph TI["Threat intel (public IPs only)"]
-        V1["AbuseIPDB GET /api/v2/check"]
-        V2["VirusTotal GET /api/v3/ip_addresses/{ip}"]
+        T1["AbuseIPDB /api/v2/check"]
+        T2["VirusTotal /api/v3/ip_addresses/{ip}"]
     end
 
-    L --> A1
-    S --> A1 & A2 --> A3
-    C --> A1 --> A4
-    CL --> A1 --> A5
-    EN --> V1 & V2
-    IS --> M1 --> M2
-    UN --> M1 --> M3
-    IS --> A1
-    UN --> A1
-    IS --> A4
-    UN --> A4
-
-    A1 & A2 & A3 & A4 & A5 -.-> T1
-    M1 & M2 & M3 -.-> T2
+    P3 -- "POST /webhook/splunk" --> D1
+    L --> D1
+    S --> D1 & D2
+    C --> D2
+    CL --> D1 & D2
+    EN --> T1 & T2
+    EN -. "linked incident" .-> D2
+    HU --> P1
+    IS --> D1 --> V1
+    UN --> D1 --> V2
+    IS & UN -. "comment" .-> D2
+    BTN --> D1
+    BTN --> EN
+    BTN --> IS
+    Discord -. "every action" .-> P2
 ```
-
-> Incident numbers (e.g. `1042`) are resolved to incident GUIDs with
-> `GET /incidents?$filter=properties/incidentNumber eq 1042`; GUIDs go straight to `GET /incidents/{id}`.
 
 ## `/isolate` sequence
 
@@ -86,21 +83,37 @@ flowchart LR
 sequenceDiagram
     actor Analyst
     participant Bot as SOC Bot
-    participant Entra as Entra ID
-    participant Sentinel as Sentinel API
-    participant MDE as Defender API
+    participant DB as SQLite store
+    participant VM as soc-victim
+    participant HEC as Splunk HEC
     participant Audit as Audit log/channel
 
-    Analyst->>Bot: /isolate host:ws-fin-017 reason:... incident:1042
+    Analyst->>Bot: /isolate host:soc-victim reason:... incident:12
     Bot->>Bot: RBAC (RESPONSE tier), validate hostname, deny-list
-    Bot->>Entra: get_token(ARM), get_token(MDE)
-    Bot->>Sentinel: GET /incidents?$filter=incidentNumber eq 1042
-    Bot->>MDE: GET /api/machines?$filter=startswith(computerDnsName,'ws-fin-017')
-    Bot-->>Analyst: Device card + [Confirm] [Cancel]
+    Bot->>DB: get incident 12
+    Bot->>Bot: resolve host in RESPONDER_HOSTS allow-list
+    Bot-->>Analyst: Host card + [Confirm] [Cancel]
     Analyst->>Bot: Confirm
-    Bot->>MDE: POST /api/machines/{id}/isolate {Comment, IsolationType}
-    MDE-->>Bot: MachineAction (Pending)
-    Bot->>Sentinel: PUT /incidents/{id}/comments/{guid}
-    Bot-->>Analyst: Action submitted (action ID)
+    Bot->>VM: SSH responder: sudo -n /usr/local/sbin/soc-isolate
+    VM-->>Bot: exit 0 "isolated"
+    Bot->>DB: add comment to incident 12
+    Bot-->>Analyst: Isolation completed
     Bot->>Audit: device.isolate success
+    Bot->>HEC: forward audit entry
+```
+
+## Alert intake sequence
+
+```mermaid
+sequenceDiagram
+    participant SP as Splunk alert
+    participant W as Webhook receiver
+    participant DB as SQLite store
+    participant D as Discord alerts channel
+
+    SP->>W: POST /webhook/splunk (secret, JSON)
+    W->>W: constant-time secret check, size limit, validate fields
+    W->>DB: insert incident
+    W->>D: embed + Acknowledge / Enrich / Isolate buttons
+    W-->>SP: 201 {"id": 12}
 ```

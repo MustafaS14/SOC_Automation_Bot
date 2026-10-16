@@ -38,6 +38,5 @@ class AccessPolicy:
         return level is not None and level >= required
 
     def channel_allowed(self, channel_id: int | None) -> bool:
-        if not self.allowed_channel_ids:
-            return True
-        return channel_id in self.allowed_channel_ids
+        # An empty allow-list means no channels, not every channel.
+        return channel_id is not None and channel_id in self.allowed_channel_ids

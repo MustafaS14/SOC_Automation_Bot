@@ -1,0 +1,15 @@
+#!/bin/bash
+# Install as /usr/local/sbin/soc-isolate (root:root, 0755). Run only through the responder sudoers entry.
+# Drops all traffic except the SIEM host, so the bot can still SSH in to release the machine
+# and Filebeat can keep shipping logs.
+set -euo pipefail
+
+MGMT_IP="192.168.56.10"
+
+ufw --force reset
+ufw default deny incoming
+ufw default deny outgoing
+ufw allow in from "$MGMT_IP"
+ufw allow out to "$MGMT_IP"
+ufw --force enable
+echo "isolated (management host $MGMT_IP still allowed)"

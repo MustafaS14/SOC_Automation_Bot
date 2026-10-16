@@ -5,7 +5,6 @@ from __future__ import annotations
 import fnmatch
 import ipaddress
 import re
-import uuid
 
 _HOSTNAME_RE = re.compile(r"^(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,62})(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,62}))*$")
 
@@ -14,27 +13,25 @@ class ValidationError(ValueError):
     pass
 
 
-def parse_incident_ref(value: str) -> int | str:
-    """Accept either a Sentinel incident number (e.g. ``1042``) or incident GUID."""
+def _shown(value: str) -> str:
+    """Truncate and strip characters that could break the Discord markdown the value is echoed in."""
+    return "".join(c for c in value[:64] if c.isprintable() and c not in "`*_~|<>@")
+
+
+def parse_incident_ref(value: str) -> int:
+    """Accept an incident number such as ``1042`` or ``#1042``."""
     value = value.strip().lstrip("#")
-    if value.isdigit():
-        number = int(value)
-        if number <= 0:
-            raise ValidationError("Incident number must be positive.")
-        return number
-    try:
-        return str(uuid.UUID(value))
-    except ValueError as exc:
-        raise ValidationError(
-            f"`{value[:64]}` is not a valid incident number or incident ID (GUID)."
-        ) from exc
+    # isdigit() also accepts characters like '²' that int() rejects, so require ASCII.
+    if not (value.isascii() and value.isdigit()) or len(value) > 9 or int(value) <= 0:
+        raise ValidationError(f"`{_shown(value)}` is not a valid incident number.")
+    return int(value)
 
 
 def parse_ip(value: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
     try:
         return ipaddress.ip_address(value.strip())
     except ValueError as exc:
-        raise ValidationError(f"`{value[:64]}` is not a valid IPv4/IPv6 address.") from exc
+        raise ValidationError(f"`{_shown(value)}` is not a valid IPv4/IPv6 address.") from exc
 
 
 def is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
@@ -44,7 +41,7 @@ def is_public_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
 def parse_hostname(value: str) -> str:
     value = value.strip().lower()
     if not _HOSTNAME_RE.match(value):
-        raise ValidationError(f"`{value[:64]}` is not a valid hostname.")
+        raise ValidationError(f"`{_shown(value)}` is not a valid hostname.")
     return value
 
 

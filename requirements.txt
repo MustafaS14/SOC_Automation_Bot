@@ -1,4 +1,5 @@
 discord.py>=2.4
 httpx>=0.27
-azure-identity>=1.17
+aiohttp>=3.9
+asyncssh>=2.14
 python-dotenv>=1.0

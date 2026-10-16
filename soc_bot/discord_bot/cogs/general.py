@@ -14,16 +14,17 @@ if TYPE_CHECKING:
 HELP_TEXT = """\
 **READ**
 `/incident list [status] [severity] [limit]` - list incidents
-`/incident show <incident>` - details + entities
+`/incident show <incident>` - details + comments
 `/enrich <ip> [incident]` - AbuseIPDB / VirusTotal reputation
+`/hunt <template> [window] [target]` - predefined Splunk search
 
 **TRIAGE**
 `/incident comment <incident> <message>` - add a comment
 `/incident close <incident> <classification> <comment>` - close incident
 
 **RESPONSE**
-`/isolate <host> <reason> <incident> [isolation_type]` - isolate device (MDE)
-`/unisolate <host> <reason> <incident>` - release device
+`/isolate <host> <reason> <incident>` - isolate host over SSH
+`/unisolate <host> <reason> <incident>` - release host
 """
 
 

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Any, Protocol
-
 import httpx
 
 
@@ -17,23 +15,32 @@ class NotFoundError(APIError):
     pass
 
 
-class AsyncTokenCredential(Protocol):
-    async def get_token(self, *scopes: str, **kwargs: Any) -> Any: ...
+class NotConfiguredError(RuntimeError):
+    pass
 
 
-async def bearer_headers(credential: AsyncTokenCredential, scope: str) -> dict[str, str]:
-    token = await credential.get_token(scope)
-    return {"Authorization": f"Bearer {token.token}", "Content-Type": "application/json"}
+def _error_message(resp: httpx.Response) -> str | None:
+    try:
+        body = resp.json()
+    except ValueError:
+        return resp.text[:300]
+    if not isinstance(body, dict):
+        return str(body)[:300]
+    # Splunk REST: {"messages": [{"type": "FATAL", "text": "..."}]}
+    messages = body.get("messages")
+    if isinstance(messages, list):
+        texts = [m.get("text") for m in messages if isinstance(m, dict) and m.get("text")]
+        if texts:
+            return "; ".join(texts)[:300]
+    # HEC: {"text": "Invalid token", "code": 4}
+    err = body.get("error", body)
+    if isinstance(err, dict):
+        return err.get("message") or err.get("text")
+    return str(err)[:300]
 
 
 def raise_for_status(service: str, resp: httpx.Response) -> None:
     if resp.status_code < 400:
         return
-    try:
-        body = resp.json()
-        err = body.get("error", body)
-        message = err.get("message") if isinstance(err, dict) else str(err)
-    except ValueError:
-        message = resp.text[:300]
     cls = NotFoundError if resp.status_code == 404 else APIError
-    raise cls(service, resp.status_code, message or resp.reason_phrase)
+    raise cls(service, resp.status_code, _error_message(resp) or resp.reason_phrase)
