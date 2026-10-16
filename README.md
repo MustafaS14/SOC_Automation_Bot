@@ -81,7 +81,7 @@ soc_bot/
 infra/
 ├── auditd/soc.rules       # victim auditd rule
 └── responder/             # soc-isolate, soc-unisolate, soc-gate, sudoers entry, setup README
-tests/                     # pytest: RBAC, validators, store, webhook, Splunk/SSH clients, response flow, config
+tests/                     # pytest: commands and buttons, store, webhook, clients, RBAC, validators, config
 ```
 
 ## Setup
@@ -98,7 +98,7 @@ tests/                     # pytest: RBAC, validators, store, webhook, Splunk/SS
 1. **Search token:** Settings → Tokens → New Token for a user with search rights. Put it in `SPLUNK_TOKEN` and set `SPLUNK_URL=https://<siem>:8089`. For the lab's self-signed certificate, set `SPLUNK_VERIFY_TLS=false`.
 2. **Alert webhook:** Splunk must `POST` to `http://<bot-host>:8765/webhook/splunk` with the header `X-Webhook-Secret: <WEBHOOK_SECRET>`. The secret is accepted in that header only, never in the URL. Splunk's built-in **Webhook** alert action cannot add headers, so use a custom alert action that does, or a reverse proxy on the Splunk host that adds the header for Splunk's own requests only. Have the SPL return `host`, `src_ip` and `severity` fields so the bot can fill the incident.
    - The receiver binds to `127.0.0.1` by default. Binding it wider (`WEBHOOK_HOST`) exposes the secret in clear text over HTTP, so do that only on a trusted host-only network or behind a TLS reverse proxy.
-   - Authenticated requests are limited to `WEBHOOK_RATE_LIMIT` per minute (default 30); extra requests get `429`.
+   - Authenticated requests are limited to `WEBHOOK_RATE_LIMIT` per minute (default 30); extra requests get `429`. The limit is global, not per sender, so someone holding a leaked secret could use it up. Rotate `WEBHOOK_SECRET` if that happens.
 3. **Audit forwarding (optional):** create an HEC token allowed to write to index `soc_audit`, then set `SPLUNK_HEC_URL` and `SPLUNK_HEC_TOKEN`.
 
 Test the webhook without Splunk:
@@ -137,11 +137,11 @@ Set `DISCORD_GUILD_ID` so that slash commands sync to your server immediately. `
 - **Least privilege by tier:** READ < TRIAGE < RESPONSE. The bot refuses to start with no RBAC roles or no allowed channels, so it can never run open to everyone.
 - **Scope limits:** commands work only in guilds, not DMs, in the allowed channels, and optionally in one guild (`DISCORD_GUILD_ID`). Alert buttons enforce the same checks.
 - **Human in the loop:** close, isolate and unisolate need an explicit **Confirm** click from the analyst who ran the command. The prompt times out after 60 s.
-- **Critical asset deny-list:** `ISOLATION_DENYLIST` (fnmatch patterns) is checked against the typed name before any lookup and again against the resolved inventory name, each as a full name and as a short name.
+- **Critical asset deny-list:** `ISOLATION_DENYLIST` (fnmatch patterns) applies to both `/isolate` and `/unisolate`. It is checked against the typed name before any lookup and again against the resolved inventory name, each as a full name and as a short name.
 - **No shell or SPL from chat:** SSH runs two fixed commands. SPL comes from templates, and only hostnames, IPs and time windows from fixed lists fill them. SQL is parameterised.
 - **Restricted responder:** a dedicated user whose key is limited by `authorized_keys` to a forced-command gate (no shell, PTY or forwarding), `sudoers` access to two scripts only, a host allow-list in `RESPONDER_HOSTS`, and SSH host-key verification.
 - **Webhook hardening:** empty secret refused at startup and by `create_app`, secret accepted from the `X-Webhook-Secret` header only and compared in constant time, 64 KB body limit, per-minute rate limit on authenticated calls, every field validated and truncated, bound to `127.0.0.1` by default.
-- **Output safety:** Discord output escapes markdown, echoed input is stripped of markdown characters, and `AllowedMentions.none()` stops the bot from pinging anyone.
+- **Output safety:** text that comes from Splunk or SSH (alert titles, descriptions, hosts, error messages) is escaped, including brackets so `[text](url)` cannot render as a link. Alert links must be plain http(s) URLs on the `SPLUNK_URL` host. Echoed input is stripped of markdown characters, and `AllowedMentions.none()` stops the bot from pinging anyone.
 - **Data minimisation:** private and reserved IPs are never sent to AbuseIPDB or VirusTotal.
 - **Accountability:** every action records the Discord user in the JSONL audit log, in an incident comment where relevant, and in Splunk HEC. The local file is append-only by convention, so the Splunk copy is the tamper-resistant one.
 - **Secrets:** all secrets live in `.env` or environment variables (`.env` is git-ignored).
@@ -162,6 +162,8 @@ $env:SOC_BOT_MOCK="true"; python -m soc_bot
 
 A Discord token, role IDs and channel IDs are still needed because the bot connects to Discord.
 
+Mock mode fakes a successful isolation, so it has safeguards: the bot logs a `*** MOCK MODE IS ON ***` warning at startup, `/soc-help` shows `MOCK MODE`, isolation output is tagged `[MOCK]`, and the bot refuses to start if `SOC_BOT_MOCK=true` is combined with any `SPLUNK_*`, `SPLUNK_HEC_*`, `RESPONDER_HOSTS` or `RESPONDER_SSH_KEY` setting. Mock mode also does not require `WEBHOOK_SECRET`; the webhook stays off unless you set one.
+
 ## Tests
 
 ```powershell
@@ -169,4 +171,4 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The tests cover RBAC tiers and the channel rule, input validation and injection rejection, the incident store, webhook authentication (including an empty secret), rate limiting and parsing, hunt template validation, Splunk REST and HEC clients through `httpx.MockTransport`, the SSH client against a fake connection, the isolate flow with the deny-list checks, the verdict logic, and config validation. They make no network calls.
+The tests cover RBAC tiers and the channel rule, input validation and injection rejection, the incident store, webhook authentication (including an empty secret), rate limiting and parsing, hunt template validation, Splunk REST and HEC clients through `httpx.MockTransport`, the SSH client against a fake connection, every slash command and alert button through fake Discord interactions, the deny-list checks on isolate and unisolate, error escaping, the verdict logic, and config validation. They make no network calls.

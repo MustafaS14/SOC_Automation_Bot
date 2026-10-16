@@ -25,6 +25,11 @@ def _int_or_none(name: str) -> int | None:
         raise ConfigError(f"{name} must be an integer ID") from exc
 
 
+def _int_default(name: str, default: int) -> int:
+    value = _int_or_none(name)
+    return default if value is None else value
+
+
 def _id_set(name: str) -> frozenset[int]:
     raw = os.getenv(name, "")
     try:
@@ -100,9 +105,9 @@ class Settings:
             alert_channel_id=_int_or_none("ALERT_CHANNEL_ID"),
             db_path=os.getenv("DB_PATH", "incidents.db").strip(),
             webhook_host=os.getenv("WEBHOOK_HOST", "127.0.0.1").strip(),
-            webhook_port=_int_or_none("WEBHOOK_PORT") or 8765,
+            webhook_port=_int_default("WEBHOOK_PORT", 8765),
             webhook_secret=os.getenv("WEBHOOK_SECRET", "").strip(),
-            webhook_rate_limit=_int_or_none("WEBHOOK_RATE_LIMIT") or 30,
+            webhook_rate_limit=_int_default("WEBHOOK_RATE_LIMIT", 30),
             splunk_url=os.getenv("SPLUNK_URL", "").strip().rstrip("/"),
             splunk_token=os.getenv("SPLUNK_TOKEN", "").strip(),
             splunk_verify_tls=_bool(os.getenv("SPLUNK_VERIFY_TLS", "true")),
@@ -138,8 +143,18 @@ class Settings:
                     missing.extend(n for n, v in zip(names, values) if not v)
         if missing:
             raise ConfigError("Missing required settings: " + ", ".join(missing))
+        if self.mock_mode:
+            # Mock mode fakes isolation and hunts, so it must never run next to real backend settings.
+            real = [n for names, values in pairs for n, v in zip(names, values) if v]
+            if real:
+                raise ConfigError(
+                    "SOC_BOT_MOCK=true but real backend settings are present (" + ", ".join(real)
+                    + "). Unset them or set SOC_BOT_MOCK=false."
+                )
         if self.webhook_rate_limit < 1:
             raise ConfigError("WEBHOOK_RATE_LIMIT must be at least 1.")
+        if not 1 <= self.webhook_port <= 65535:
+            raise ConfigError("WEBHOOK_PORT must be between 1 and 65535.")
         if not (self.read_role_ids or self.triage_role_ids or self.response_role_ids):
             raise ConfigError(
                 "No RBAC roles configured. Set RBAC_READ_ROLE_IDS / RBAC_TRIAGE_ROLE_IDS / "

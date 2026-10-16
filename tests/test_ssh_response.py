@@ -1,5 +1,6 @@
 import asyncio
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import asyncssh
 import pytest
@@ -128,3 +129,19 @@ async def test_connection_problems_map_to_502(monkeypatch, kwargs):
     with pytest.raises(APIError) as exc:
         await make_client().isolate("soc-victim")
     assert exc.value.status == 502
+
+
+async def test_mock_client_is_clearly_marked_and_never_connects(fake, monkeypatch):
+    from soc_bot.clients import mock
+
+    monkeypatch.setattr(mock.asyncio, "sleep", AsyncMock())
+    client = mock.MockSshResponseClient()
+
+    result = await client.isolate("soc-victim")
+    assert "[MOCK]" in result.output and "no real host" in result.output
+    with pytest.raises(APIError):
+        await client.isolate("soc-victim")  # already isolated
+    assert "[MOCK]" in (await client.unisolate("soc-victim")).output
+    with pytest.raises(NotFoundError):
+        await client.isolate("dc01.evil.com")
+    assert fake.connects == []

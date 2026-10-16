@@ -31,6 +31,25 @@ def test_parse_alert_drops_bad_values_instead_of_trusting_them():
     assert fields["url"] is None and fields["severity"] == "Medium"
 
 
+@pytest.mark.parametrize(
+    "link",
+    [
+        "javascript:alert(1)", "ftp://splunk/x", "//splunk/x", "https://", "https://user:pw@splunk/x",
+        "https://splunk/a b", "https://splunk/\nx", "https://splunk/" + "a" * 600, 5, None,
+    ],
+)
+def test_malformed_alert_links_are_dropped(link):
+    assert parse_alert({"search_name": "r", "results_link": link})["url"] is None
+
+
+def test_alert_link_must_point_at_the_splunk_host_when_known():
+    good = {"search_name": "r", "results_link": "https://Splunk.lab:8000/app/search/@go?sid=1"}
+    assert parse_alert(good, "splunk.lab")["url"] == good["results_link"]
+    bad = {"search_name": "r", "results_link": "https://evil.example/login"}
+    assert parse_alert(bad, "splunk.lab")["url"] is None
+    assert parse_alert(bad)["url"] == bad["results_link"]  # no host configured: only the shape is checked
+
+
 @pytest.mark.parametrize("payload", [[], "x", {}, {"search_name": "  "}])
 def test_parse_alert_rejects_invalid(payload):
     with pytest.raises(ValidationError):

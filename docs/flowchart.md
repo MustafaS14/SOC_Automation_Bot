@@ -14,7 +14,7 @@ flowchart TD
     D -- invalid --> Y[Ephemeral validation error]
     D -- valid --> E{Destructive action?<br/>close / isolate / unisolate}
     E -- no --> F[Call backend]
-    E -- yes --> G{Host on deny-list?}
+    E -- yes --> G{isolate / unisolate: host on deny-list?<br/>checked on the typed name,<br/>then on the resolved inventory name<br/>close has no host and skips this}
     G -- yes --> Z[Blocked<br/>audit: blocked]
     G -- no --> H[Confirm / Cancel buttons<br/>requester only, 60s]
     H -- cancel / timeout --> W[Cancelled<br/>audit: cancelled]

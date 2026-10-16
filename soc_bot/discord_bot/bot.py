@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Coroutine
 from typing import Any
+from urllib.parse import urlsplit
 
 import discord
 import httpx
@@ -82,7 +83,10 @@ class SocBot(commands.Bot):
         if s.mock_mode:
             from ..clients import mock
 
-            log.warning("MOCK MODE: using in-memory incidents, Splunk, SSH and TI data")
+            log.warning(
+                "*** MOCK MODE IS ON *** incidents are in memory, /hunt returns canned rows and "
+                "/isolate only pretends; no real host is touched. Set SOC_BOT_MOCK=false for real use."
+            )
             self.store = IncidentStore(":memory:")
             await mock.seed_incidents(self.store)
             self.splunk = mock.MockSplunkClient()
@@ -115,7 +119,11 @@ class SocBot(commands.Bot):
             log.warning("WEBHOOK_SECRET not set: alert webhook disabled")
             return
         app = webhook.create_app(
-            self.store, s.webhook_secret, self.post_alert, max_per_minute=s.webhook_rate_limit
+            self.store,
+            s.webhook_secret,
+            self.post_alert,
+            max_per_minute=s.webhook_rate_limit,
+            link_host=urlsplit(s.splunk_url).hostname if s.splunk_url else None,
         )
         self._web_runner = web.AppRunner(app)
         await self._web_runner.setup()
@@ -197,14 +205,16 @@ class SocBot(commands.Bot):
         elif isinstance(original, (ValidationError, NotConfiguredError)):
             message = str(original)
         elif isinstance(original, NotFoundError):
-            message = original.message
+            message = embeds.md(original.message, 300)
         elif isinstance(original, APIError):
+            # Upstream text (Splunk, SSH output) is untrusted, so it is escaped before it reaches an embed.
+            detail = embeds.md(original.message, 300)
             if original.status == 409:
-                message = original.message
+                message = detail
             elif original.status in (401, 403):
                 message = f"{original.service} rejected the bot's credentials."
             else:
-                message = f"{original.service} returned {original.status}: {original.message}"
+                message = f"{original.service} returned {original.status}: {detail}"
             await self.audit(interaction, command, "-", "error", status=original.status, error=original.message)
         else:
             log.exception("Unhandled error in /%s", command, exc_info=original)

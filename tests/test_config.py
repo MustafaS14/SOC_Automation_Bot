@@ -77,3 +77,49 @@ def test_from_env_strips_keys_and_defaults_to_loopback(monkeypatch):
     assert settings.discord_token == "tok" and settings.webhook_secret == "s"
     assert settings.abuseipdb_api_key == "abuse" and settings.virustotal_api_key is None
     assert settings.webhook_host == "127.0.0.1" and settings.webhook_rate_limit == 30
+    assert settings.webhook_port == 8765
+
+
+def _from_env(monkeypatch, **extra):
+    monkeypatch.setattr("soc_bot.config.load_dotenv", lambda: None)
+    env = {"DISCORD_TOKEN": "t", "ALLOWED_CHANNEL_IDS": "1", "RBAC_READ_ROLE_IDS": "2", "WEBHOOK_SECRET": "s"}
+    for name in ("WEBHOOK_PORT", "WEBHOOK_RATE_LIMIT", "SOC_BOT_MOCK", "SPLUNK_URL", "SPLUNK_TOKEN",
+                 "SPLUNK_HEC_URL", "SPLUNK_HEC_TOKEN", "RESPONDER_HOSTS", "RESPONDER_SSH_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in {**env, **extra}.items():
+        monkeypatch.setenv(name, value)
+    return Settings.from_env()
+
+
+@pytest.mark.parametrize("name", ["WEBHOOK_RATE_LIMIT", "WEBHOOK_PORT"])
+def test_explicit_zero_is_rejected_not_replaced_by_the_default(monkeypatch, name):
+    with pytest.raises(ConfigError, match=name):
+        _from_env(monkeypatch, **{name: "0"})
+
+
+def test_explicit_values_are_kept(monkeypatch):
+    settings = _from_env(monkeypatch, WEBHOOK_PORT="9000", WEBHOOK_RATE_LIMIT="5")
+    assert (settings.webhook_port, settings.webhook_rate_limit) == (9000, 5)
+
+
+def test_port_out_of_range_is_rejected():
+    with pytest.raises(ConfigError, match="WEBHOOK_PORT"):
+        Settings(**{**BASE, "webhook_port": 70000}).validate()
+
+
+@pytest.mark.parametrize(
+    "extra, name",
+    [
+        ({"splunk_url": "https://s:8089", "splunk_token": "t"}, "SPLUNK_URL"),
+        ({"splunk_hec_url": "https://s:8088", "splunk_hec_token": "t"}, "SPLUNK_HEC_URL"),
+        ({"responder_hosts": {"h": "10.0.0.1"}, "responder_ssh_key": "k"}, "RESPONDER_HOSTS"),
+        ({"splunk_token": "t"}, "SPLUNK_TOKEN"),
+    ],
+)
+def test_mock_mode_refuses_to_run_beside_real_backend_settings(extra, name):
+    with pytest.raises(ConfigError, match=f"SOC_BOT_MOCK.*{name}"):
+        Settings(**{**BASE, "mock_mode": True, **extra}).validate()
+
+
+def test_mock_mode_alone_is_fine():
+    Settings(**{**BASE, "mock_mode": True, "webhook_secret": ""}).validate()

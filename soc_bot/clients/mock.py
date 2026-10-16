@@ -63,11 +63,11 @@ class MockSshResponseClient(SshResponseClient):
             if address in self.isolated:
                 raise APIError(self.service, 400, "Host is already isolated")
             self.isolated.add(address)
-            return IsolationResult(name, address, action, "isolated")
+            return IsolationResult(name, address, action, "[MOCK] isolated - no real host was touched")
         if address not in self.isolated:
             raise APIError(self.service, 400, "Host is not isolated")
         self.isolated.discard(address)
-        return IsolationResult(name, address, action, "released")
+        return IsolationResult(name, address, action, "[MOCK] released - no real host was touched")
 
 
 class MockEnrichmentClient:

@@ -95,7 +95,8 @@ class IpReport:
         if score >= 25 or malicious >= 1 or (self.vt_suspicious or 0) >= 2:
             return "Suspicious"
         if self.abuse_score is None and self.vt_malicious is None:
-            return "Unknown"
+            # Both lookups failed (or neither ran): say so rather than implying a neutral answer.
+            return "Incomplete" if self.errors else "Unknown"
         # A failed lookup must not read as a clean result.
         if self.errors:
             return "Incomplete"

@@ -73,14 +73,14 @@ class ResponseCog(commands.Cog):
         action_name = f"device.{verb.lower()}"
         if self.bot.ssh is None:
             raise NotConfiguredError("Host isolation is not configured (RESPONDER_HOSTS / RESPONDER_SSH_KEY).")
-        if verb == "Isolate" and await self._blocked(interaction, action_name, hostname):
+        if await self._blocked(interaction, action_name, hostname):
             return
 
         await interaction.response.defer(thinking=True)
         incident = await self.bot.store.get(incident_id)
         name, address = self.bot.ssh.resolve(hostname)
         # The inventory name can differ from what was typed (short name -> FQDN), so check it again.
-        if verb == "Isolate" and await self._blocked(interaction, action_name, name):
+        if await self._blocked(interaction, action_name, name):
             return
 
         view = ConfirmView(interaction.user.id)
@@ -116,8 +116,8 @@ class ResponseCog(commands.Cog):
         if not is_protected_host(hostname, self.bot.settings.isolation_denylist):
             return False
         message = (
-            f"`{hostname}` is on the isolation deny-list (critical asset). "
-            "Isolate it manually through the change-approval process."
+            f"`{hostname}` is on the deny-list (critical asset). "
+            "Handle it manually through the change-approval process."
         )
         if interaction.response.is_done():
             await interaction.edit_original_response(embed=embeds.error(message), view=None)

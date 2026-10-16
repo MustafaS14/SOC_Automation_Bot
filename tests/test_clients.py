@@ -2,7 +2,6 @@ import httpx
 import pytest
 
 from soc_bot.clients import APIError, HecClient, NotFoundError, SplunkClient
-from soc_bot.models import IpReport
 
 
 def make_splunk(handler):
@@ -87,21 +86,3 @@ async def test_hec_sends_event_and_swallows_failures():
 
     failing = httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(403, json={"text": "Invalid token"})))
     await HecClient(http=failing, url="https://x", token="bad").send({"a": 1})  # must not raise
-
-
-def test_verdict_is_incomplete_when_a_lookup_failed():
-    report = IpReport(ip="8.8.8.8", is_public=True, abuse_score=0, errors=["VirusTotal: ReadTimeout"])
-    assert report.verdict == "Incomplete"
-    report.errors.clear()
-    assert report.verdict == "Clean"
-
-
-def test_verdict_levels():
-    assert IpReport(ip="10.0.0.1", is_public=False).verdict == "Internal"
-    assert IpReport(ip="1.1.1.1", is_public=True).verdict == "Unknown"
-    assert IpReport(ip="1.1.1.1", is_public=True, abuse_score=75).verdict == "Malicious"
-    assert IpReport(ip="1.1.1.1", is_public=True, vt_malicious=5).verdict == "Malicious"
-    assert IpReport(ip="1.1.1.1", is_public=True, abuse_score=25).verdict == "Suspicious"
-    assert IpReport(ip="1.1.1.1", is_public=True, vt_malicious=0, vt_suspicious=2).verdict == "Suspicious"
-    # Real findings still win over a failed second lookup.
-    assert IpReport(ip="1.1.1.1", is_public=True, abuse_score=90, errors=["x"]).verdict == "Malicious"

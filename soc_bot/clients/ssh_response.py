@@ -49,8 +49,8 @@ class SshResponseClient:
             if len(matches) == 1:
                 return matches[0], self._hosts[matches[0]]
             if matches:
-                raise APIError(self.service, 409, f"`{name}` is ambiguous, matches: {', '.join(matches)}")
-        raise NotFoundError(self.service, 404, f"`{name}` is not in the responder inventory")
+                raise APIError(self.service, 409, f"'{name}' is ambiguous, matches: {', '.join(matches)}")
+        raise NotFoundError(self.service, 404, f"'{name}' is not in the responder inventory")
 
     async def isolate(self, hostname: str) -> IsolationResult:
         return await self._run("isolate", hostname)

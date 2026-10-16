@@ -8,6 +8,7 @@ import time
 from collections import deque
 from collections.abc import Awaitable, Callable
 from typing import Any
+from urllib.parse import urlsplit
 
 from aiohttp import web
 
@@ -36,7 +37,25 @@ def _severity(value: Any) -> str:
     return _SEVERITY_ALIASES.get(key, "Medium")
 
 
-def parse_alert(payload: Any) -> dict[str, Any]:
+def _link(value: Any, expected_host: str | None) -> str | None:
+    """Accept a plain http(s) URL, and when the Splunk host is known only one on that host."""
+    if not isinstance(value, str):
+        return None
+    url = value.strip()
+    if not url or len(url) > 500 or any(c.isspace() or not c.isprintable() for c in url):
+        return None
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return None
+    if parts.scheme not in {"http", "https"} or not parts.hostname or parts.username or parts.password:
+        return None
+    if expected_host and parts.hostname.lower() != expected_host.lower():
+        return None
+    return url
+
+
+def parse_alert(payload: Any, link_host: str | None = None) -> dict[str, Any]:
     """Turn a Splunk webhook body into incident fields. Splunk sends the first result row under `result`."""
     if not isinstance(payload, dict):
         raise ValidationError("Payload must be a JSON object.")
@@ -59,16 +78,13 @@ def parse_alert(payload: Any) -> dict[str, Any]:
         except ValidationError:
             src_ip = None
 
-    url = _text(payload.get("results_link"), 500)
-    if url and not url.startswith(("http://", "https://")):
-        url = None
     return {
         "rule": rule,
         "severity": _severity(result.get("severity")),
         "host": host,
         "src_ip": src_ip,
         "description": _text(result.get("_raw") or result.get("description"), 1000) or "",
-        "url": url,
+        "url": _link(payload.get("results_link"), link_host),
     }
 
 
@@ -97,6 +113,7 @@ def create_app(
     on_incident: Callable[[Incident], Awaitable[None]],
     *,
     max_per_minute: int = 30,
+    link_host: str | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> web.Application:
     if not secret.strip():
@@ -114,7 +131,7 @@ def create_app(
         if not limiter.allow():
             return web.json_response({"error": "rate limit exceeded"}, status=429, headers={"Retry-After": "60"})
         try:
-            fields = parse_alert(await request.json())
+            fields = parse_alert(await request.json(), link_host)
         except (ValueError, ValidationError) as exc:
             return web.json_response({"error": str(exc) or "invalid JSON"}, status=400)
         incident = await store.create(**fields)
