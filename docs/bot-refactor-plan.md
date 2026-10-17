@@ -1,5 +1,7 @@
 # Bot refactor plan: from Azure to the local Splunk lab
 
+> **Status: implemented (2026-10-16 to 2026-10-17).** The refactor was done in commits `7cc13eb` to `49f9f49` and reviewed after each commit. This page is kept as the original brief. The findings and fixes are in [security-review.md](security-review.md). Still to do: run the bot against a live Splunk and a real isolation on the victim VM.
+
 The bot was first written against Microsoft Sentinel and Defender for Endpoint. The project now runs as a fully local lab (see [architecture.md](architecture.md)), so the **data sources and response backend change**, while the Discord, security, and audit layers stay.
 
 ## Target behaviour
