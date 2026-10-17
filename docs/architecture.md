@@ -71,3 +71,12 @@ The host-only network is isolated from the real LAN, so the attack simulation ca
 - **Logstash between the endpoint and Splunk.** Logs are parsed, enriched, and filtered before ingestion, which keeps noise (for example `debian-sa1` cron jobs) out of the SIEM.
 - **Own SQLite incident store.** Splunk raises alerts, but incident state (open, assigned, closed) lives in the bot's database, so triage works without a case-management product.
 - **Restricted response user.** Isolation runs over SSH as a dedicated `responder` account limited by `sudoers` to a single script, so a compromised bot cannot run arbitrary commands on the endpoint.
+
+## Related documents
+
+- [lab-build-log.md](lab-build-log.md): how the VMs, Caldera and the bot work were built, step by step.
+- [troubleshooting.md](troubleshooting.md): problems hit during the build, with causes and fixes.
+- [security-review.md](security-review.md): findings from reviewing the bot, how each was fixed, and what is still open.
+- [bot-refactor-plan.md](bot-refactor-plan.md): the original plan for moving the bot from Azure to this lab.
+- [roadmap.md](roadmap.md): ideas for extending the project, ordered by value and effort.
+- [../attack-scenarios/01-discovery.md](../attack-scenarios/01-discovery.md): the first Caldera run and what auditd recorded.
