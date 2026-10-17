@@ -48,7 +48,9 @@ class AlertButton(
         if self.action == "ack":
             updated = await bot.store.acknowledge(incident.id, actor)
             await interaction.response.send_message(
-                embed=embeds.notice(f"Incident **#{updated.id}** acknowledged by {actor}.", discord.Color.green())
+                embed=embeds.notice(
+                    f"Incident **#{updated.id}** acknowledged by {embeds.md(actor, 100)}.", discord.Color.green()
+                )
             )
             await bot.audit(interaction, "incident.ack", f"#{incident.id}", "success", notify=False)
         elif self.action == "enrich":

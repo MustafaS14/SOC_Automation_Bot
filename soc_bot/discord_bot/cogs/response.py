@@ -16,6 +16,14 @@ from ..views import ConfirmView
 if TYPE_CHECKING:
     from ..bot import SocBot
 
+_BLOCKED_ADVICE = {
+    "Isolate": "Isolate it manually through the change-approval process.",
+    "Unisolate": (
+        "Releasing a protected host must also be done outside the bot, "
+        "through the change-approval process."
+    ),
+}
+
 
 class ResponseCog(commands.Cog):
     """Containment actions over SSH on lab hosts."""
@@ -73,14 +81,14 @@ class ResponseCog(commands.Cog):
         action_name = f"device.{verb.lower()}"
         if self.bot.ssh is None:
             raise NotConfiguredError("Host isolation is not configured (RESPONDER_HOSTS / RESPONDER_SSH_KEY).")
-        if await self._blocked(interaction, action_name, hostname):
+        if await self._blocked(interaction, verb, hostname):
             return
 
         await interaction.response.defer(thinking=True)
         incident = await self.bot.store.get(incident_id)
         name, address = self.bot.ssh.resolve(hostname)
         # The inventory name can differ from what was typed (short name -> FQDN), so check it again.
-        if await self._blocked(interaction, action_name, name):
+        if await self._blocked(interaction, verb, name):
             return
 
         view = ConfirmView(interaction.user.id)
@@ -112,16 +120,13 @@ class ResponseCog(commands.Cog):
             address=address, reason=reason, incident=incident.id,
         )
 
-    async def _blocked(self, interaction: discord.Interaction, action: str, hostname: str) -> bool:
+    async def _blocked(self, interaction: discord.Interaction, verb: str, hostname: str) -> bool:
         if not is_protected_host(hostname, self.bot.settings.isolation_denylist):
             return False
-        message = (
-            f"`{hostname}` is on the deny-list (critical asset). "
-            "Handle it manually through the change-approval process."
-        )
+        message = f"`{hostname}` is on the deny-list (critical asset). {_BLOCKED_ADVICE[verb]}"
         if interaction.response.is_done():
             await interaction.edit_original_response(embed=embeds.error(message), view=None)
         else:
             await interaction.response.send_message(embed=embeds.error(message), ephemeral=True)
-        await self.bot.audit(interaction, action, hostname, "blocked", reason="deny-list")
+        await self.bot.audit(interaction, f"device.{verb.lower()}", hostname, "blocked", reason="deny-list")
         return True

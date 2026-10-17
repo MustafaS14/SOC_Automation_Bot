@@ -42,24 +42,66 @@ def audit_outcomes(env):
     return [(c.args[1], c.args[2], c.args[3]) for c in env.bot.audit.await_args_list]
 
 
-@pytest.mark.parametrize("verb", ["Isolate", "Unisolate"])
-async def test_typed_name_on_denylist_is_blocked_before_resolution(env, verb):
+def refusal_text(interaction):
+    """The refusal embed text, whether it was sent before or after the interaction was deferred."""
+    mock = interaction.response.send_message
+    if mock.await_args is None:
+        mock = interaction.edit_original_response
+    return mock.await_args.kwargs["embed"].description
+
+
+ISOLATE_ADVICE = "Isolate it manually through the change-approval process."
+UNISOLATE_ADVICE = "Releasing a protected host must also be done outside the bot, through the change-approval process."
+
+
+async def test_isolate_on_deny_listed_typed_name_is_refused(env):
     interaction = make_interaction()
-    await env.cog.device_action(interaction, verb, "dc01", "reason here", env.incident.id)
+    await env.cog.device_action(interaction, "Isolate", "dc01", "reason here", env.incident.id)
+
+    assert env.bot.ssh.calls == []
+    interaction.response.defer.assert_not_awaited()  # refused before any lookup
+    assert audit_outcomes(env) == [("device.isolate", "dc01", "blocked")]
+    text = refusal_text(interaction)
+    assert "`dc01` is on the deny-list" in text and ISOLATE_ADVICE in text and "outside the bot" not in text
+
+
+async def test_isolate_on_deny_listed_resolved_name_is_refused(env):
+    # "srv1" is not on the deny-list, but it resolves to srv1.corp.local which matches *.corp.local.
+    interaction = make_interaction()
+    await env.cog.device_action(interaction, "Isolate", "srv1", "reason here", env.incident.id)
+
+    assert env.bot.ssh.calls == []
+    assert audit_outcomes(env) == [("device.isolate", "srv1.corp.local", "blocked")]
+    text = refusal_text(interaction)
+    assert "`srv1.corp.local` is on the deny-list" in text and ISOLATE_ADVICE in text
+
+
+async def test_unisolate_on_deny_listed_typed_name_is_refused_with_release_wording(env):
+    interaction = make_interaction()
+    await env.cog.device_action(interaction, "Unisolate", "dc01", "reason here", env.incident.id)
 
     assert env.bot.ssh.calls == []
     interaction.response.defer.assert_not_awaited()
-    assert audit_outcomes(env) == [(f"device.{verb.lower()}", "dc01", "blocked")]
+    assert audit_outcomes(env) == [("device.unisolate", "dc01", "blocked")]
+    text = refusal_text(interaction)
+    assert UNISOLATE_ADVICE in text and ISOLATE_ADVICE not in text
 
 
-@pytest.mark.parametrize("verb", ["Isolate", "Unisolate"])
-async def test_resolved_name_is_checked_against_denylist_again(env, verb):
-    # "srv1" is not on the deny-list, but it resolves to srv1.corp.local which matches *.corp.local.
+async def test_unisolate_on_deny_listed_resolved_name_is_refused_with_release_wording(env):
     interaction = make_interaction()
-    await env.cog.device_action(interaction, verb, "srv1", "reason here", env.incident.id)
+    await env.cog.device_action(interaction, "Unisolate", "srv1", "reason here", env.incident.id)
 
     assert env.bot.ssh.calls == []
-    assert audit_outcomes(env) == [(f"device.{verb.lower()}", "srv1.corp.local", "blocked")]
+    assert audit_outcomes(env) == [("device.unisolate", "srv1.corp.local", "blocked")]
+    assert UNISOLATE_ADVICE in refusal_text(interaction)
+
+
+async def test_refused_host_never_reaches_the_confirm_step(env):
+    interaction = make_interaction()
+    await env.cog.device_action(interaction, "Unisolate", "srv1", "reason here", env.incident.id)
+    for call in interaction.edit_original_response.await_args_list:
+        assert call.kwargs.get("view") is None  # no Confirm/Cancel buttons were ever offered
+    assert (await env.bot.store.get(env.incident.id)).comments == []
 
 
 async def test_foreign_fqdn_is_rejected_not_mapped_to_inventory(env):
@@ -79,6 +121,14 @@ async def test_confirmed_isolation_runs_ssh_comments_and_audits(env):
     assert "Isolate executed on soc-victim (192.168.56.20). Reason: C2 beacon" in comment.body
     assert audit_outcomes(env) == [("device.isolate", "soc-victim", "success")]
     assert env.bot.audit.await_args.kwargs["incident"] == env.incident.id
+
+
+async def test_result_embed_escapes_the_actor_name(env):
+    interaction = make_interaction(FakeUser(42, "**admin** [click](http://evil.example)"))
+    await env.cog.device_action(interaction, "Isolate", "soc-victim", "C2 beacon", env.incident.id)
+
+    fields = {f.name: f.value for f in interaction.edit_original_response.await_args.kwargs["embed"].fields}
+    assert "**admin**" not in fields["Requested by"] and "[click](" not in fields["Requested by"]
 
 
 async def test_confirmed_unisolate_runs_ssh_and_audits(env):

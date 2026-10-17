@@ -116,3 +116,11 @@ async def test_closing_an_already_closed_incident_is_a_noop(env):
     assert (await env.bot.store.get(1)).classification == "benign"
     assert "already closed" in sent_embed(interaction.edit_original_response).description
     assert audited(env) == []
+
+
+async def test_closed_by_field_escapes_the_actor_name(env):
+    interaction = make_interaction(FakeUser(7, "**admin** [click](http://evil.example)"))
+    await env.cog.close.callback(env.cog, interaction, incident="1", classification="benign", comment="fine")
+
+    closed_by = {f.name: f.value for f in sent_embed(interaction.edit_original_response).fields}["Closed by"]
+    assert "**admin**" not in closed_by and "[click](" not in closed_by

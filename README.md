@@ -97,8 +97,8 @@ tests/                     # pytest: commands and buttons, store, webhook, clien
 
 1. **Search token:** Settings → Tokens → New Token for a user with search rights. Put it in `SPLUNK_TOKEN` and set `SPLUNK_URL=https://<siem>:8089`. For the lab's self-signed certificate, set `SPLUNK_VERIFY_TLS=false`.
 2. **Alert webhook:** Splunk must `POST` to `http://<bot-host>:8765/webhook/splunk` with the header `X-Webhook-Secret: <WEBHOOK_SECRET>`. The secret is accepted in that header only, never in the URL. Splunk's built-in **Webhook** alert action cannot add headers, so use a custom alert action that does, or a reverse proxy on the Splunk host that adds the header for Splunk's own requests only. Have the SPL return `host`, `src_ip` and `severity` fields so the bot can fill the incident.
-   - The receiver binds to `127.0.0.1` by default. Binding it wider (`WEBHOOK_HOST`) exposes the secret in clear text over HTTP, so do that only on a trusted host-only network or behind a TLS reverse proxy.
-   - Authenticated requests are limited to `WEBHOOK_RATE_LIMIT` per minute (default 30); extra requests get `429`. The limit is global, not per sender, so someone holding a leaked secret could use it up. Rotate `WEBHOOK_SECRET` if that happens.
+   - The receiver binds to `127.0.0.1` by default. See [Webhook protection](#webhook-protection) before binding it wider.
+   - **Alert links:** the `results_link` in the payload is kept only if it is a plain http(s) URL whose hostname is the hostname of `SPLUNK_URL` or is listed in `WEBHOOK_LINK_HOSTS` (comma-separated bare hostnames, no scheme or port). Ports are ignored, so a `SPLUNK_URL` on the management port 8089 also allows links on the web port 8000. If neither setting is set, every link is dropped and the bot logs a warning at startup; the alert is still stored and posted.
 3. **Audit forwarding (optional):** create an HEC token allowed to write to index `soc_audit`, then set `SPLUNK_HEC_URL` and `SPLUNK_HEC_TOKEN`.
 
 Test the webhook without Splunk:
@@ -130,7 +130,7 @@ copy .env.example .env                # then fill in the values
 python -m soc_bot
 ```
 
-Set `DISCORD_GUILD_ID` so that slash commands sync to your server immediately. `ALLOWED_CHANNEL_IDS`, at least one RBAC role and `WEBHOOK_SECRET` are required. Splunk, HEC and SSH are optional, and the matching commands report "not configured" until you set them.
+Set `DISCORD_GUILD_ID` so that slash commands sync to your server immediately. `ALLOWED_CHANNEL_IDS` and at least one RBAC role are always required. `WEBHOOK_SECRET` is required too, except in mock mode, where the webhook is disabled when no secret is set. Splunk, HEC and SSH are optional, and the matching commands report "not configured" until you set them.
 
 ## Security controls
 
@@ -140,8 +140,8 @@ Set `DISCORD_GUILD_ID` so that slash commands sync to your server immediately. `
 - **Critical asset deny-list:** `ISOLATION_DENYLIST` (fnmatch patterns) applies to both `/isolate` and `/unisolate`. It is checked against the typed name before any lookup and again against the resolved inventory name, each as a full name and as a short name.
 - **No shell or SPL from chat:** SSH runs two fixed commands. SPL comes from templates, and only hostnames, IPs and time windows from fixed lists fill them. SQL is parameterised.
 - **Restricted responder:** a dedicated user whose key is limited by `authorized_keys` to a forced-command gate (no shell, PTY or forwarding), `sudoers` access to two scripts only, a host allow-list in `RESPONDER_HOSTS`, and SSH host-key verification.
-- **Webhook hardening:** empty secret refused at startup and by `create_app`, secret accepted from the `X-Webhook-Secret` header only and compared in constant time, 64 KB body limit, per-minute rate limit on authenticated calls, every field validated and truncated, bound to `127.0.0.1` by default.
-- **Output safety:** text that comes from Splunk or SSH (alert titles, descriptions, hosts, error messages) is escaped, including brackets so `[text](url)` cannot render as a link. Alert links must be plain http(s) URLs on the `SPLUNK_URL` host. Echoed input is stripped of markdown characters, and `AllowedMentions.none()` stops the bot from pinging anyone.
+- **Webhook hardening:** see [Webhook protection](#webhook-protection).
+- **Output safety:** text that comes from Splunk or SSH (alert titles, descriptions, hosts, error messages) and Discord display names is escaped, including brackets so `[text](url)` cannot render as a link. Alert links are checked against an allowed-hostname list (see the Splunk setup). Echoed input is stripped of markdown characters, and `AllowedMentions.none()` stops the bot from pinging anyone.
 - **Data minimisation:** private and reserved IPs are never sent to AbuseIPDB or VirusTotal.
 - **Accountability:** every action records the Discord user in the JSONL audit log, in an incident comment where relevant, and in Splunk HEC. The local file is append-only by convention, so the Splunk copy is the tamper-resistant one.
 - **Secrets:** all secrets live in `.env` or environment variables (`.env` is git-ignored).
@@ -151,6 +151,14 @@ Example audit entry:
 ```json
 {"ts": "2026-10-16T09:41:12+00:00", "actor": "analyst#0", "actor_id": 1234, "action": "device.isolate", "target": "soc-victim", "outcome": "success", "channel_id": 5678, "address": "192.168.56.20", "reason": "C2 beacon", "incident": 12}
 ```
+
+## Webhook protection
+
+- **Authentication:** the secret is read from the `X-Webhook-Secret` header only and compared in constant time. An empty `WEBHOOK_SECRET` is refused at startup (outside mock mode) and by `create_app`.
+- **Input limits:** 64 KB body limit, and every field is validated and truncated before it is stored.
+- **Rate limit:** authenticated requests are limited to `WEBHOOK_RATE_LIMIT` per minute (default 30, all senders combined); extra requests get `429`. Requests with a wrong secret are rejected with `401` and do not use up the budget.
+- **The limit is global.** Anyone holding a leaked secret can use up the whole budget and so delay real alerts. If the secret may have leaked, rotate `WEBHOOK_SECRET` and update the Splunk alert action (or the proxy that adds the header) to send the new value.
+- **Network exposure:** the receiver binds to `127.0.0.1` by default. Keep it there or on a private lab network. Anything wider sends the secret in clear text over plain HTTP, so it needs TLS (for example a reverse proxy) or a network you trust.
 
 ## Mock mode
 
@@ -162,7 +170,12 @@ $env:SOC_BOT_MOCK="true"; python -m soc_bot
 
 A Discord token, role IDs and channel IDs are still needed because the bot connects to Discord.
 
-Mock mode fakes a successful isolation, so it has safeguards: the bot logs a `*** MOCK MODE IS ON ***` warning at startup, `/soc-help` shows `MOCK MODE`, isolation output is tagged `[MOCK]`, and the bot refuses to start if `SOC_BOT_MOCK=true` is combined with any `SPLUNK_*`, `SPLUNK_HEC_*`, `RESPONDER_HOSTS` or `RESPONDER_SSH_KEY` setting. Mock mode also does not require `WEBHOOK_SECRET`; the webhook stays off unless you set one.
+Mock mode fakes a successful isolation, so it has safeguards:
+
+- At startup the bot logs a multi-line `*** MOCK MODE IS ON ***` banner.
+- `/soc-help` and alert embeds show `MOCK MODE` in the footer, and isolation output is tagged `[MOCK]`.
+- The bot refuses to start if `SOC_BOT_MOCK=true` is combined with any of these settings: `SPLUNK_URL`, `SPLUNK_TOKEN`, `SPLUNK_HEC_URL`, `SPLUNK_HEC_TOKEN`, `RESPONDER_HOSTS`, `RESPONDER_SSH_KEY`. No other setting is checked.
+- `WEBHOOK_SECRET` is not required in mock mode. The webhook is disabled when it is empty, and runs if you set one.
 
 ## Tests
 
@@ -171,4 +184,4 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The tests cover RBAC tiers and the channel rule, input validation and injection rejection, the incident store, webhook authentication (including an empty secret), rate limiting and parsing, hunt template validation, Splunk REST and HEC clients through `httpx.MockTransport`, the SSH client against a fake connection, every slash command and alert button through fake Discord interactions, the deny-list checks on isolate and unisolate, error escaping, the verdict logic, and config validation. They make no network calls.
+The tests cover RBAC tiers and the channel rule, the `ensure()` access check, input validation and injection rejection, the incident store, webhook authentication (including an empty secret), rate limiting, link-host rules and parsing, hunt template validation, Splunk REST and HEC clients and the threat-intel client through `httpx.MockTransport`, the SSH client against a fake connection, every slash command and alert button through fake Discord interactions, the deny-list checks on isolate and unisolate, error and actor-name escaping, the verdict logic, the mock-mode banner, and config validation. They make no network calls.

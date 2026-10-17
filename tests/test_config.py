@@ -123,3 +123,25 @@ def test_mock_mode_refuses_to_run_beside_real_backend_settings(extra, name):
 
 def test_mock_mode_alone_is_fine():
     Settings(**{**BASE, "mock_mode": True, "webhook_secret": ""}).validate()
+
+
+def test_alert_link_hosts_come_from_splunk_url_and_the_explicit_list():
+    assert Settings(**BASE).alert_link_hosts == frozenset()
+    from_url = Settings(**{**BASE, "splunk_url": "https://Splunk.Lab:8089", "splunk_token": "t"})
+    assert from_url.alert_link_hosts == frozenset({"splunk.lab"})  # the management port is ignored
+    both = Settings(**{**BASE, "splunk_url": "https://splunk.lab:8089", "splunk_token": "t",
+                       "webhook_link_hosts": ("192.168.56.10",)})
+    assert both.alert_link_hosts == frozenset({"splunk.lab", "192.168.56.10"})
+    only_list = Settings(**{**BASE, "webhook_link_hosts": ("splunk.lab",)})
+    assert only_list.alert_link_hosts == frozenset({"splunk.lab"})
+
+
+@pytest.mark.parametrize("entry", ["https://splunk.lab", "splunk.lab:8000", "splunk.lab/app", "a b"])
+def test_link_hosts_must_be_bare_hostnames(entry):
+    with pytest.raises(ConfigError, match="WEBHOOK_LINK_HOSTS"):
+        Settings(**{**BASE, "webhook_link_hosts": (entry,)}).validate()
+
+
+def test_link_hosts_are_parsed_and_lowercased_from_env(monkeypatch):
+    settings = _from_env(monkeypatch, WEBHOOK_LINK_HOSTS=" Splunk.Lab , 192.168.56.10 ")
+    assert settings.webhook_link_hosts == ("splunk.lab", "192.168.56.10")

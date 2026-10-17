@@ -3,11 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import httpx
 
 from ..models import IpReport
 from ..validators import is_public_ip, parse_ip
+
+
+def _dict_at(body: Any, *keys: str) -> dict[str, Any]:
+    """Follow `keys` through nested dicts; any other shape raises ValueError, which callers record."""
+    for key in keys:
+        body = body.get(key) if isinstance(body, dict) else None
+    if not isinstance(body, dict):
+        raise ValueError("unexpected response shape")
+    return body
 
 
 class EnrichmentClient:
@@ -44,7 +54,7 @@ class EnrichmentClient:
                 headers={"Key": self._abuse_key, "Accept": "application/json"},
             )
             resp.raise_for_status()
-            data = resp.json().get("data", {})
+            data = _dict_at(resp.json(), "data")
         except (httpx.HTTPError, ValueError) as exc:
             report.errors.append(f"AbuseIPDB: {type(exc).__name__}")
             return
@@ -63,11 +73,12 @@ class EnrichmentClient:
                 headers={"x-apikey": self._vt_key},
             )
             resp.raise_for_status()
-            attrs = resp.json().get("data", {}).get("attributes", {})
+            attrs = _dict_at(resp.json(), "data", "attributes")
         except (httpx.HTTPError, ValueError) as exc:
             report.errors.append(f"VirusTotal: {type(exc).__name__}")
             return
-        stats = attrs.get("last_analysis_stats", {})
+        stats = attrs.get("last_analysis_stats")
+        stats = stats if isinstance(stats, dict) else {}
         report.vt_malicious = stats.get("malicious")
         report.vt_suspicious = stats.get("suspicious")
         report.vt_harmless = stats.get("harmless")

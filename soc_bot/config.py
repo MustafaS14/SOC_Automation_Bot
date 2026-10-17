@@ -3,6 +3,7 @@ from __future__ import annotations
 import ipaddress
 import os
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -75,6 +76,7 @@ class Settings:
     webhook_port: int = 8765
     webhook_secret: str = field(default="", repr=False)
     webhook_rate_limit: int = 30
+    webhook_link_hosts: tuple[str, ...] = ()
     splunk_url: str = ""
     splunk_token: str = field(default="", repr=False)
     splunk_verify_tls: bool = True
@@ -108,6 +110,7 @@ class Settings:
             webhook_port=_int_default("WEBHOOK_PORT", 8765),
             webhook_secret=os.getenv("WEBHOOK_SECRET", "").strip(),
             webhook_rate_limit=_int_default("WEBHOOK_RATE_LIMIT", 30),
+            webhook_link_hosts=_str_list("WEBHOOK_LINK_HOSTS"),
             splunk_url=os.getenv("SPLUNK_URL", "").strip().rstrip("/"),
             splunk_token=os.getenv("SPLUNK_TOKEN", "").strip(),
             splunk_verify_tls=_bool(os.getenv("SPLUNK_VERIFY_TLS", "true")),
@@ -124,6 +127,14 @@ class Settings:
         )
         settings.validate()
         return settings
+
+    @property
+    def alert_link_hosts(self) -> frozenset[str]:
+        """Hostnames (any port) that alert links may point at: SPLUNK_URL's host plus WEBHOOK_LINK_HOSTS."""
+        hosts = set(self.webhook_link_hosts)
+        if self.splunk_url and (host := urlsplit(self.splunk_url).hostname):
+            hosts.add(host.lower())
+        return frozenset(hosts)
 
     def validate(self) -> None:
         missing = []
@@ -155,6 +166,8 @@ class Settings:
             raise ConfigError("WEBHOOK_RATE_LIMIT must be at least 1.")
         if not 1 <= self.webhook_port <= 65535:
             raise ConfigError("WEBHOOK_PORT must be between 1 and 65535.")
+        if any("/" in h or ":" in h or " " in h for h in self.webhook_link_hosts):
+            raise ConfigError("WEBHOOK_LINK_HOSTS must be bare hostnames, without scheme, port or path.")
         if not (self.read_role_ids or self.triage_role_ids or self.response_role_ids):
             raise ConfigError(
                 "No RBAC roles configured. Set RBAC_READ_ROLE_IDS / RBAC_TRIAGE_ROLE_IDS / "

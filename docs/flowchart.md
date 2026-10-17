@@ -111,9 +111,23 @@ sequenceDiagram
     participant DB as SQLite store
     participant D as Discord alerts channel
 
-    SP->>W: POST /webhook/splunk (secret, JSON)
-    W->>W: constant-time secret check, size limit, validate fields
-    W->>DB: insert incident
-    W->>D: embed + Acknowledge / Enrich / Isolate buttons
-    W-->>SP: 201 {"id": 12}
+    SP->>W: POST /webhook/splunk (X-Webhook-Secret header, JSON)
+    W->>W: constant-time secret check
+    alt wrong or missing secret
+        W-->>SP: 401 (does not count against the rate limit)
+    else secret ok
+        W->>W: rate limit: at most WEBHOOK_RATE_LIMIT per minute, all senders combined
+        alt limit reached
+            W-->>SP: 429 Retry-After: 60
+        else within limit
+            W->>W: size limit (64 KB), parse JSON, validate and truncate fields
+            alt invalid payload
+                W-->>SP: 400
+            else valid
+                W->>DB: insert incident
+                W->>D: embed + Acknowledge / Enrich / Isolate buttons
+                W-->>SP: 201 {"id": 12}
+            end
+        end
+    end
 ```

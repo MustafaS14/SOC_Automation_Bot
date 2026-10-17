@@ -37,9 +37,12 @@ def _severity(value: Any) -> str:
     return _SEVERITY_ALIASES.get(key, "Medium")
 
 
-def _link(value: Any, expected_host: str | None) -> str | None:
-    """Accept a plain http(s) URL, and when the Splunk host is known only one on that host."""
-    if not isinstance(value, str):
+def _link(value: Any, allowed_hosts: frozenset[str]) -> str | None:
+    """Accept a plain http(s) URL whose hostname, on any port, is in `allowed_hosts`.
+
+    With no allowed hosts every link is dropped.
+    """
+    if not allowed_hosts or not isinstance(value, str):
         return None
     url = value.strip()
     if not url or len(url) > 500 or any(c.isspace() or not c.isprintable() for c in url):
@@ -50,12 +53,12 @@ def _link(value: Any, expected_host: str | None) -> str | None:
         return None
     if parts.scheme not in {"http", "https"} or not parts.hostname or parts.username or parts.password:
         return None
-    if expected_host and parts.hostname.lower() != expected_host.lower():
+    if parts.hostname.lower() not in allowed_hosts:
         return None
     return url
 
 
-def parse_alert(payload: Any, link_host: str | None = None) -> dict[str, Any]:
+def parse_alert(payload: Any, link_hosts: frozenset[str] = frozenset()) -> dict[str, Any]:
     """Turn a Splunk webhook body into incident fields. Splunk sends the first result row under `result`."""
     if not isinstance(payload, dict):
         raise ValidationError("Payload must be a JSON object.")
@@ -84,7 +87,7 @@ def parse_alert(payload: Any, link_host: str | None = None) -> dict[str, Any]:
         "host": host,
         "src_ip": src_ip,
         "description": _text(result.get("_raw") or result.get("description"), 1000) or "",
-        "url": _link(payload.get("results_link"), link_host),
+        "url": _link(payload.get("results_link"), link_hosts),
     }
 
 
@@ -113,7 +116,7 @@ def create_app(
     on_incident: Callable[[Incident], Awaitable[None]],
     *,
     max_per_minute: int = 30,
-    link_host: str | None = None,
+    link_hosts: frozenset[str] = frozenset(),
     clock: Callable[[], float] = time.monotonic,
 ) -> web.Application:
     if not secret.strip():
@@ -121,6 +124,8 @@ def create_app(
         raise ValueError("The webhook secret must not be empty.")
     if max_per_minute < 1:
         raise ValueError("max_per_minute must be at least 1.")
+    if not link_hosts:
+        log.warning("Neither SPLUNK_URL nor WEBHOOK_LINK_HOSTS is set: alert links will be dropped.")
     limiter = RateLimiter(max_per_minute, clock=clock)
 
     async def splunk_alert(request: web.Request) -> web.Response:
@@ -131,7 +136,7 @@ def create_app(
         if not limiter.allow():
             return web.json_response({"error": "rate limit exceeded"}, status=429, headers={"Retry-After": "60"})
         try:
-            fields = parse_alert(await request.json(), link_host)
+            fields = parse_alert(await request.json(), link_hosts)
         except (ValueError, ValidationError) as exc:
             return web.json_response({"error": str(exc) or "invalid JSON"}, status=400)
         incident = await store.create(**fields)

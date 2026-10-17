@@ -41,6 +41,25 @@ def test_both_lookups_failing_is_incomplete():
     assert report(errors=["AbuseIPDB: ReadTimeout", "VirusTotal: ReadTimeout"]).verdict == "Incomplete"
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"abuse_score": 0, "errors": ["VirusTotal: ReadTimeout"]},
+        {"abuse_score": 10, "errors": ["VirusTotal: ReadTimeout"]},
+        {"vt_malicious": 0, "vt_suspicious": 1, "errors": ["AbuseIPDB: ReadTimeout"]},
+        {"vt_malicious": 0, "vt_harmless": 70, "errors": ["AbuseIPDB: HTTPStatusError"]},
+    ],
+)
+def test_one_source_failed_and_the_other_found_nothing_bad_is_incomplete(kwargs):
+    assert report(**kwargs).verdict == "Incomplete"
+
+
+def test_unknown_only_when_there_are_no_errors_and_no_data():
+    assert report().verdict == "Unknown"
+    assert report(errors=["x"]).verdict == "Incomplete"
+    assert report(abuse_score=0).verdict == "Clean"
+
+
 def test_real_findings_win_over_a_failed_lookup():
     assert report(abuse_score=90, errors=["VirusTotal: ReadTimeout"]).verdict == "Malicious"
     assert report(vt_malicious=1, errors=["AbuseIPDB: ReadTimeout"]).verdict == "Suspicious"

@@ -5,6 +5,7 @@ import pytest
 
 from soc_bot.clients import NotConfiguredError, NotFoundError
 from soc_bot.discord_bot import alerts as alerts_module
+from soc_bot.discord_bot import embeds
 from soc_bot.discord_bot.alerts import AlertButton, alert_view
 from soc_bot.discord_bot.checks import AccessDenied
 from soc_bot.discord_bot.cogs.enrichment import EnrichmentCog
@@ -103,8 +104,8 @@ def alert_env(monkeypatch):
     return ensure
 
 
-def alert_interaction(bot):
-    interaction = make_interaction(FakeUser(5, "alice"))
+def alert_interaction(bot, name="alice"):
+    interaction = make_interaction(FakeUser(5, name))
     interaction.client = bot
     return interaction
 
@@ -198,3 +199,20 @@ async def test_button_errors_go_to_the_bot_error_handler():
 
     await AlertButton("ack", 1).on_error(interaction, boom)
     bot.handle_error.assert_awaited_once_with(interaction, "alert.ack", boom)
+
+
+EVIL_NAME = "**admin** [click](http://evil.example) `x` ||s||"
+
+
+async def test_ack_notice_escapes_the_actor_name(store, alert_env):
+    await store.create(rule="r", severity="High")
+    bot = SimpleNamespace(store=store, audit=AsyncMock(), cogs={})
+    interaction = alert_interaction(bot, EVIL_NAME)
+
+    await AlertButton("ack", 1).callback(interaction)
+
+    text = sent_embed(interaction.response.send_message).description
+    assert "**admin**" not in text and "[click](" not in text and "||s||" not in text
+    assert "acknowledged by" in text and "\\[click\\]" in text
+    assert (await store.get(1)).assignee == EVIL_NAME  # stored as typed; escaped only when rendered
+    assert "[click](" not in embeds.incident_detail(await store.get(1)).fields[2].value

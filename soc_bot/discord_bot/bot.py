@@ -4,7 +4,6 @@ import asyncio
 import logging
 from collections.abc import Coroutine
 from typing import Any
-from urllib.parse import urlsplit
 
 import discord
 import httpx
@@ -34,6 +33,14 @@ from .checks import AccessDenied
 from .cogs import EnrichmentCog, GeneralCog, HuntCog, IncidentCog, ResponseCog
 
 log = logging.getLogger("soc_bot")
+
+MOCK_BANNER = (
+    "*" * 72,
+    "*** MOCK MODE IS ON ***",
+    "Incidents are in memory, /hunt returns canned rows and /isolate only pretends.",
+    "No real host is touched. Set SOC_BOT_MOCK=false for real use.",
+    "*" * 72,
+)
 
 
 class SocBot(commands.Bot):
@@ -83,10 +90,8 @@ class SocBot(commands.Bot):
         if s.mock_mode:
             from ..clients import mock
 
-            log.warning(
-                "*** MOCK MODE IS ON *** incidents are in memory, /hunt returns canned rows and "
-                "/isolate only pretends; no real host is touched. Set SOC_BOT_MOCK=false for real use."
-            )
+            for line in MOCK_BANNER:
+                log.warning(line)
             self.store = IncidentStore(":memory:")
             await mock.seed_incidents(self.store)
             self.splunk = mock.MockSplunkClient()
@@ -123,7 +128,7 @@ class SocBot(commands.Bot):
             s.webhook_secret,
             self.post_alert,
             max_per_minute=s.webhook_rate_limit,
-            link_host=urlsplit(s.splunk_url).hostname if s.splunk_url else None,
+            link_hosts=s.alert_link_hosts,
         )
         self._web_runner = web.AppRunner(app)
         await self._web_runner.setup()
@@ -137,7 +142,10 @@ class SocBot(commands.Bot):
             return
         channel = self.get_channel(channel_id)
         if isinstance(channel, discord.abc.Messageable):
-            await channel.send(embed=embeds.incident_detail(incident), view=alert_view(incident.id))
+            embed = embeds.incident_detail(incident)
+            if self.settings.mock_mode:
+                embed.set_footer(text="MOCK MODE")
+            await channel.send(embed=embed, view=alert_view(incident.id))
 
     async def on_ready(self) -> None:
         log.info("Logged in as %s (%s)", self.user, getattr(self.user, "id", "?"))
