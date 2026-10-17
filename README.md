@@ -4,6 +4,20 @@ A Discord ChatOps bot, written in Python, for a fully local SOC lab. Splunk aler
 
 See [docs/architecture.md](docs/architecture.md) for the lab and [docs/bot-refactor-plan.md](docs/bot-refactor-plan.md) for the migration plan.
 
+## Project status
+
+Part of a fully local SOC lab (no cloud): Caldera attack, victim logs, Splunk, then this bot. "Built and tested" means the code has unit tests; it does not yet mean it has run end to end in the lab.
+
+| Area | Status |
+|---|---|
+| Attacker VM with MITRE Caldera, victim VM with Sandcat agent and auditd | Built; first Discovery run recorded in [attack-scenarios/01-discovery.md](attack-scenarios/01-discovery.md) |
+| Bot (webhook, SQLite store, /hunt, SSH isolation, RBAC, audit) | Built and unit-tested; reviewed in [docs/security-review.md](docs/security-review.md); not yet run against a live Splunk or a real isolation |
+| SIEM VM with Splunk and Logstash, Filebeat on the victim | Planned next |
+| Splunk detections mapped to MITRE ATT&CK, webhook alerts | Planned |
+| Auto-enrichment playbook, dashboard, more attack scenarios | Ideas, after the pipeline works end to end |
+
+Documentation: [architecture](docs/architecture.md), [lab build log](docs/lab-build-log.md), [troubleshooting](docs/troubleshooting.md), [security review](docs/security-review.md), [bot refactor plan](docs/bot-refactor-plan.md).
+
 ---
 
 ## Features
