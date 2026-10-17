@@ -1,6 +1,6 @@
 # Security review
 
-The bot can isolate hosts and close incidents, so it was reviewed like production code before being pointed at the lab. This page lists what the review found, how each finding was fixed, and what is still open. The review was a read-through of the code and its tests; it was not a penetration test, and the bot has not yet been run against a live Splunk or the victim VM.
+The bot can isolate hosts and close incidents, so it was reviewed like production code before being pointed at the lab. This page lists what the review found, how each finding was fixed, and what is still open. The review was a read-through of the code and its tests (last checked at commit `49f9f49`); it was not a penetration test, and the bot has not yet been run against a live Splunk or the victim VM.
 
 Severity is a judgement call for a lab setting: **High** means an unauthenticated or unintended action was possible, **Medium** means a weakness that needs another failure to matter, **Low** means polish or hardening.
 
@@ -22,6 +22,10 @@ Severity is a judgement call for a lab setting: **High** means an unauthenticate
 | 12 | `SOC_BOT_MOCK=true` could be left on next to real settings and report fake isolations as successful | Medium | Mock mode logs a warning at startup, refuses to start when real Splunk or SSH settings are present, and leaves the webhook disabled |
 | 13 | `WEBHOOK_PORT=0` and `WEBHOOK_RATE_LIMIT=0` were silently replaced by the defaults | Low | Explicit zero is rejected at startup |
 | 14 | `ssh_response.py` imported a type that did not exist, so the SSH module could not load | Medium (correctness) | The type was added and the module imports cleanly |
+| 15 | The "acknowledged by" notice put the Discord username into the message unescaped | Low | The name is escaped with the same helper as the other embeds; a test covers a name with markdown characters |
+| 16 | Alert links could point at any http(s) host when `SPLUNK_URL` was not set | Low | The link is now dropped unless its host is `SPLUNK_URL`'s host or listed in `WEBHOOK_LINK_HOSTS` (ports ignored); a startup warning says when links will be dropped |
+| 17 | The deny-list refusal for unisolate used the wording for isolate | Low | The message is now specific to each action |
+| 18 | A reputation API returning an unexpected JSON shape raised an unhandled error in `/enrich` | Low | Non-object bodies are treated as a failed lookup and recorded in `errors`, so the verdict is "Incomplete" |
 
 ## Controls that were already in place and kept
 
@@ -41,6 +45,11 @@ Severity is a judgement call for a lab setting: **High** means an unauthenticate
 | The responder's SSH key needs a forced command | Medium | Documented in `infra/responder/README.md`; it must be applied in `authorized_keys` when the lab is built |
 | Deny-listed hosts cannot be released from chat | Info | By design, but a host isolated outside the bot stays isolated until someone acts manually; this belongs in a runbook |
 | The auditd rule logs 64-bit `execve` only and is noisy | Low | A 32-bit rule and filtering by user will be added when detections are tuned |
+| `SPLUNK_URL` is not checked for a scheme | Low | A value like `splunk.lab:8089` has no hostname, so alert links are dropped with only the generic warning |
+| Non-numeric values inside a reputation API response are not type-checked | Low | A string where a number is expected could still raise inside the verdict logic; not covered by a test |
+| Validation and "not configured" error text is sent to Discord without markdown escaping | Low | The validators already strip backticks from echoed input, so the practical risk is small; unverified |
+| Mock mode shows its footer on alert embeds only | Info | Confirm and result embeds carry a `[MOCK]` tag instead |
+| Tests for the isolate and unisolate deny-list refusal were not located in review | Low | The code path is as described above, but a dedicated test should be confirmed |
 | Not yet tested against a live Splunk and a real isolation | Medium | Planned for the next phase of the lab |
 
 ## How this was done
