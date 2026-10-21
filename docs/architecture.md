@@ -78,5 +78,6 @@ The host-only network is isolated from the real LAN, so the attack simulation ca
 - [troubleshooting.md](troubleshooting.md): problems hit during the build, with causes and fixes.
 - [security-review.md](security-review.md): findings from reviewing the bot, how each was fixed, and what is still open.
 - [bot-refactor-plan.md](bot-refactor-plan.md): the original plan for moving the bot from Azure to this lab.
+- [lab-operations.md](lab-operations.md): starting, using and stopping the lab day to day.
 - [roadmap.md](roadmap.md): ideas for extending the project, ordered by value and effort.
 - [../attack-scenarios/01-discovery.md](../attack-scenarios/01-discovery.md): the first Caldera run and what auditd recorded.
