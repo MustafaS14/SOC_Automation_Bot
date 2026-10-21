@@ -1,0 +1,25 @@
+# Splunk Enterprise for the lab (soc-siem VM, 192.168.56.10).
+# Copy .env.example to .env, fill in the values, then: docker compose up -d
+# Setting SPLUNK_START_ARGS and SPLUNK_GENERAL_TERMS means you accept Splunk's licence terms. Read them first.
+services:
+  splunk:
+    image: splunk/splunk:latest
+    container_name: splunk
+    hostname: splunk
+    restart: unless-stopped
+    environment:
+      SPLUNK_START_ARGS: --accept-license
+      SPLUNK_GENERAL_TERMS: --accept-sgt-current-at-splunk-com
+      SPLUNK_PASSWORD: ${SPLUNK_PASSWORD}
+      SPLUNK_HEC_TOKEN: ${SPLUNK_HEC_TOKEN}
+    ports:
+      - "8000:8000"   # web interface
+      - "8088:8088"   # HTTP event collector (HEC)
+      - "8089:8089"   # management / REST API
+    volumes:
+      - splunk-var:/opt/splunk/var
+      - splunk-etc:/opt/splunk/etc
+
+volumes:
+  splunk-var:
+  splunk-etc:
