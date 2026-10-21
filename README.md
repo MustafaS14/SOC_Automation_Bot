@@ -18,6 +18,19 @@ Part of a fully local SOC lab (no cloud): Caldera attack, victim logs, Splunk, t
 
 Documentation: [architecture](docs/architecture.md), [lab build log](docs/lab-build-log.md), [troubleshooting](docs/troubleshooting.md), [security review](docs/security-review.md), [bot refactor plan](docs/bot-refactor-plan.md).
 
+## Start here
+
+To rebuild the lab and the bot from scratch, follow the documents in this order:
+
+1. [Background and goal](docs/lab-build-log.md): what the project is and why it runs as a local lab on Splunk instead of Azure.
+2. [Before you start](docs/lab-build-log.md): the computer, software and ISO images needed.
+3. [Build the VMs](docs/lab-build-log.md): VirtualBox settings, the host-only network, the victim and attacker VMs, and Caldera.
+4. [Run the lab day to day](docs/lab-operations.md): start order, SSH, starting Caldera and the agent, snapshots, shutting down.
+5. [Run an attack scenario](attack-scenarios/01-discovery.md): the first Caldera operation and the evidence auditd records.
+6. [Set up the bot](#setup) in this README, with the [security review](docs/security-review.md) for what was checked.
+7. [Roadmap](docs/roadmap.md): the SIEM build and further ideas.
+
+
 ---
 
 ## Features
