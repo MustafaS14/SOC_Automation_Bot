@@ -12,7 +12,7 @@ Part of a fully local SOC lab (no cloud): Caldera attack, victim logs, Splunk, t
 |---|---|
 | Attacker VM with MITRE Caldera, victim VM with Sandcat agent and auditd | Built; first Discovery run recorded in [attack-scenarios/01-discovery.md](attack-scenarios/01-discovery.md) |
 | Bot (webhook, SQLite store, /hunt, SSH isolation, RBAC, audit) | Built and unit-tested; reviewed in [docs/security-review.md](docs/security-review.md); not yet run against a live Splunk or a real isolation |
-| SIEM VM with Splunk and Logstash, Filebeat on the victim | Planned next |
+| SIEM VM: Splunk in Docker | Running and healthy (web UI works); indexes, HEC test, Logstash and Filebeat on the victim still to do |
 | Splunk detections mapped to MITRE ATT&CK, webhook alerts | Planned |
 | Auto-enrichment playbook, dashboard, more attack scenarios | Ideas, after the pipeline works end to end |
 
