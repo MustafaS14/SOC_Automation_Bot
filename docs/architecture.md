@@ -18,7 +18,7 @@ flowchart LR
         FB["Filebeat ⏳"]
     end
 
-    subgraph SIEM["soc-siem · 192.168.56.10 ⏳"]
+    subgraph SIEM["soc-siem · 192.168.56.10 🔧"]
         LS["Logstash<br/>parse · enrich · filter"]
         SP["Splunk Enterprise<br/>index: linux"]
         BOT["SOC Discord bot<br/>+ SQLite incident store"]
@@ -50,7 +50,7 @@ Each VM has two adapters.
 |---|---|---|---|---|---|
 | `soc-attacker` | Caldera C2 / red team | Ubuntu Server 24.04.5 | 192.168.56.30 | 4 GB | ✅ |
 | `soc-victim` | Monitored endpoint | Ubuntu Desktop 24.04.5 | 192.168.56.20 | 4 GB | ✅ (Filebeat ⏳) |
-| `soc-siem` | Splunk + Logstash + bot | Ubuntu Server 24.04 | 192.168.56.10 | 8 GB | ⏳ |
+| `soc-siem` | Splunk + Logstash + bot | Ubuntu Server 24.04.5 | 192.168.56.10 | 8 GB | 🔧 (Splunk runs; Logstash ⏳) |
 
 The host-only network is isolated from the real LAN, so the attack simulation can never leave the machine.
 
@@ -61,6 +61,7 @@ The host-only network is isolated from the real LAN, so the attack simulation ca
 | Caldera server on attacker | ✅ | Web UI on `:8888`, ran in tmux |
 | Sandcat agent on victim | ✅ | Beacons over HTTP to `192.168.56.30:8888`, group `red` |
 | auditd `execve` rule on victim | ✅ | Key `exec_cmd`; Caldera commands verified in the log |
+| Splunk in Docker on `soc-siem` | 🔧 | Running and healthy; web UI `:8000`, HEC `:8088`, REST `:8089`. Indexes (`linux`, `soc_audit`) and the HEC test still to do. Compose file in `infra/siem/` |
 | Filebeat → Logstash → Splunk | ⏳ | Next block of work |
 | Splunk detections (SPL) | ⏳ | Alerts via webhook to the bot |
 | Discord bot | 🔧 | Migrated to Splunk webhook, SQLite store, `/hunt` and SSH isolation (see `bot-refactor-plan.md`); not yet run against live Splunk or the victim VM |
