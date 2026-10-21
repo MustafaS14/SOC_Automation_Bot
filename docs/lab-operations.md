@@ -9,7 +9,7 @@ How to start, use and stop the lab. For how it was built, see [lab-build-log.md]
 | Windows host | 192.168.56.1 | VirtualBox, PowerShell, browser | local |
 | `soc-attacker` | 192.168.56.30 | MITRE Caldera on port 8888 | `ssh <your-user>@192.168.56.30`, web UI at `http://192.168.56.30:8888` |
 | `soc-victim` | 192.168.56.20 | Sandcat agent, auditd | `ssh <your-user>@192.168.56.20` |
-| `soc-siem` (planned) | 192.168.56.10 | Splunk, Logstash, the bot | `ssh <your-user>@192.168.56.10` |
+| `soc-siem` | 192.168.56.10 | Splunk, Logstash, the bot | `ssh <your-user>@192.168.56.10` |
 
 `<your-user>` is the user you created during each VM's install.
 
@@ -20,7 +20,7 @@ How to start, use and stop the lab. For how it was built, see [lab-build-log.md]
    bcdedit /enum {current} | findstr hypervisorlaunchtype
    ```
    It should say `Off`. If it says `Auto`, follow section 1 of the build log and restart.
-2. **Start the VMs** in VirtualBox, the SIEM first (once it exists), then the victim, then the attacker. A normal start is fine; to run without a window, right-click the VM and choose a headless start. Give each VM a minute or two to finish booting. If a guest freezes with kernel stack traces, power it off, set it to 1 CPU and try again.
+2. **Start the VMs** in VirtualBox, the SIEM first, then the victim, then the attacker. A normal start is fine; to run without a window, right-click the VM and choose a headless start. Give each VM a minute or two to finish booting. If a guest freezes with kernel stack traces, power it off, set it to 1 CPU and try again.
 3. **Open one PowerShell window per VM** and connect:
    ```powershell
    ssh <your-user>@192.168.56.30
@@ -70,3 +70,4 @@ A snapshot is a saved state of a VM that you can return to. Take one before anyt
 - The three VMs need 4 + 4 + 8 = 16 GB of RAM. Close other heavy programs while the lab runs.
 - If a VM becomes slow or freezes, lower it to 1 or 2 CPUs and check the laptop is plugged in.
 - You do not need every VM for every task: for attack tests only the attacker and victim are needed; the SIEM is needed once logs flow into Splunk.
+- After `soc-siem` boots, Splunk starts by itself (`restart: unless-stopped`). Check with `docker ps` in `~/siem`: it should say `healthy` after a few minutes. The web UI is at `http://192.168.56.10:8000`. Shut the VM down with `sudo poweroff` so the Splunk data is written cleanly.
