@@ -1,6 +1,6 @@
 # Lab build log
 
-How the lab was built, in order, with the exact settings and commands used. Dates are 2026-10-14 to 2026-10-16. Hostnames and IPs follow [architecture.md](architecture.md). Day-to-day running of the lab (start order, SSH, Caldera, shutdown) is in [lab-operations.md](lab-operations.md).
+How the lab was built, in order, with the exact settings and commands used. Dates are 2026-10-14 to 2026-10-21. Hostnames and IPs follow [architecture.md](architecture.md). Day-to-day running of the lab (start order, SSH, Caldera, shutdown) is in [lab-operations.md](lab-operations.md).
 
 ## Background and goal
 
@@ -53,12 +53,12 @@ Also: plug the laptop in while running the VMs. On battery the CPU is throttled 
 
 ## 1b. Creating the VMs (VirtualBox)
 
-| Setting | `soc-victim` | `soc-attacker` | `soc-siem` (planned) |
+| Setting | `soc-victim` | `soc-attacker` | `soc-siem` |
 |---|---|---|---|
-| Operating system | Ubuntu Desktop 24.04.5 | Ubuntu Server 24.04.5 | Ubuntu Server 24.04 |
+| Operating system | Ubuntu Desktop 24.04.5 | Ubuntu Server 24.04.5 | Ubuntu Server 24.04.5 |
 | RAM | 4 GB | 4 GB | 8 GB |
-| CPUs | 1 to 2 | 2 | 2 to 4 |
-| Disk | 25 GB | 20 GB | 40 GB or more |
+| CPUs | 1 to 2 | 2 | 2 |
+| Disk | 25 GB | 20 GB | 50 GB |
 | Adapter 1 | NAT | NAT | NAT |
 | Adapter 2 | Host-only | Host-only | Host-only |
 | Interfaces inside the VM | `enp0s3` (NAT), `enp0s8` (host-only) | same | same |
@@ -195,9 +195,61 @@ How it was done: the plan was written here, the code was written by a coding ass
 
 The findings and fixes are listed in [security-review.md](security-review.md). Status: unit-tested, but not yet run against a live Splunk or a real isolation.
 
-## 7. Next
+## 7. SIEM VM: Splunk in Docker (2026-10-21)
 
-- Build `soc-siem` (Ubuntu Server 24.04, 8 GB RAM, `192.168.56.10`) with Splunk and Logstash in Docker.
+The `soc-siem` VM hosts Splunk Enterprise in a container. Logstash and the bot are added to the same VM later.
+
+**VM and install.** Settings are in the table in section 1b (8 GB RAM, 2 CPUs, 50 GB disk, both adapters). Installer choices: Ubuntu Server 24.04.5, *Install OpenSSH server*, hostname `soc-siem`. After the install the VM was started without a GUI window and reached over SSH from PowerShell.
+
+**Network.** The installer showed `enp0s3` (NAT, 10.0.2.15) and `enp0s8` (host-only, a DHCP address). The host-only interface was given the fixed address `192.168.56.10`. `/etc/netplan/50-cloud-init.yaml`:
+
+```yaml
+network:
+  version: 2
+  ethernets:
+    enp0s3:
+      dhcp4: true
+    enp0s8:
+      dhcp4: false
+      addresses:
+        - 192.168.56.10/24
+```
+
+Cloud-init is told to leave the network alone (`network: {config: disabled}` in `/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg`), the file is set to mode 600, and `sudo netplan apply` is run from the SSH session. The same steps as for the other two VMs, see [troubleshooting.md](troubleshooting.md).
+
+**Updates and Docker.** After `sudo apt update && sudo apt upgrade -y`, Docker came from the Ubuntu packages:
+
+```bash
+sudo apt install -y docker.io docker-compose-v2
+sudo usermod -aG docker $USER      # log out and in again
+docker run --rm hello-world        # test
+```
+
+This Docker version stores images through containerd, so the space is used under `/var/lib/containerd`, not `/var/lib/docker`. Watch that directory when checking disk use.
+
+**Splunk container.** The files live in `~/siem/` on the VM. The compose file is in [`infra/siem/docker-compose.yml`](../infra/siem/docker-compose.yml) and the variable names are in [`infra/siem/.env.example`](../infra/siem/.env.example). The real `.env` holds the admin password and the HEC token, is created on the VM with mode 600 (`chmod 600 .env`), and is never committed (`.env` is in `.gitignore`).
+
+```bash
+mkdir -p ~/siem && cd ~/siem
+# create .env from infra/siem/.env.example, then:
+chmod 600 .env
+docker compose up -d
+docker compose logs -f             # Ctrl+C leaves the log view, the container keeps running
+docker ps                          # wait for "(healthy)"
+```
+
+- The image is `splunk/splunk:latest` (about 1.9 GB). The pull can look stuck for several minutes because the layers are extracted after the download; disk use and the load average show that it is still working.
+- The first start runs an Ansible playbook that sets up Splunk. It finished with `failed=0` and the line `Ansible playbook complete, will begin streaming splunkd_stderr.log`, and `docker ps` then showed the container as `healthy`.
+- `SPLUNK_START_ARGS: --accept-license` and `SPLUNK_GENERAL_TERMS` in the compose file mean that you accept Splunk's licence terms. Read them first. The Enterprise trial lasts 60 days and includes alerting. After that the licence drops to Free, which has no alerting, so a developer licence is needed later.
+- Ports: 8000 (web), 8088 (HEC), 8089 (REST). The web UI is at `http://192.168.56.10:8000` (plain HTTP), user `admin`, password from `.env`.
+
+**Problem during the first login.** Soon after the first login the page showed *Disconnected from Splunk server*, and the Splunk health panel showed *IOWait* as red. `dmesg` on the VM listed `watchdog: BUG: soft lockup` messages (CPU stuck for 114 s and more). The cause is the same hypervisor and slow-disk problem described in [troubleshooting.md](troubleshooting.md), made visible by Splunk's heavy first-start disk use. Settings changed on the VM: *Use host I/O cache* on the SATA controller, *Solid-state Drive* on the disk, and *Paravirtualization Interface = KVM* under System, Acceleration. To be confirmed after the next start with `sudo dmesg | grep -ci lockup` (expected `0`); if the freezes continue, set `bcdedit /set hypervisorlaunchtype off` and restart Windows.
+
+**Status.** Splunk runs and the web UI works. Not done yet: the `linux` and `soc_audit` indexes, giving the HEC token access to them, a HEC test with `curl`, and a snapshot of `soc-siem` (planned name: `splunk running`).
+
+## 8. Next
+
+- On `soc-siem`: create the `linux` and `soc_audit` indexes, test HEC with `curl`, take the `splunk running` snapshot, then add Logstash in Docker (Beats input on 5044, HEC output to Splunk).
 - Install Filebeat on the victim and ship `/var/log/audit/audit.log` and `/var/log/auth.log`.
 - Write the first SPL detection (for the Discovery scenario) and the webhook alert action.
 - On the victim, create the `responder` user from [`infra/responder/`](../infra/responder/): install the scripts and the sudoers entry, and restrict the SSH key with a forced command.
