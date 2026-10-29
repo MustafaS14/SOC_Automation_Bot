@@ -74,6 +74,12 @@ dl.facts dd { margin: 0; word-break: break-word; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .login { max-width: 360px; margin: 10vh auto 0; }
 meter { width: 100%; height: 10px; }
+meter::-webkit-meter-bar { background: var(--line); border: 0; border-radius: 5px; }
+meter::-webkit-meter-optimum-value, meter::-webkit-meter-suboptimum-value, meter::-webkit-meter-even-less-good-value { background: var(--accent); border-radius: 5px; }
+meter::-moz-meter-bar { background: var(--accent); }
+.sevrow { display: grid; grid-template-columns: 170px 1fr; gap: 12px; align-items: center; margin-bottom: 10px; }
+.row.hunt { grid-template-columns: 2fr 1fr 1fr; }
+@media (max-width: 720px) { .row.hunt, .sevrow { grid-template-columns: 1fr; } }
 .filters { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; margin-bottom: 14px; }
 .filters > div { min-width: 140px; }
 .code { font-family: var(--mono); font-size: 12.5px; }

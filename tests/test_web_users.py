@@ -122,3 +122,9 @@ def test_settings_can_skip_discord_requirements():
     Settings(**base).validate(require_discord=False)
     with pytest.raises(ConfigError):
         Settings(**base).validate()
+    # The alert webhook belongs to the bot, so a real (non-mock) console does not need its secret either.
+    real = {**base, "mock_mode": False}
+    Settings(**real).validate(require_discord=False)
+    with pytest.raises(ConfigError, match="WEBHOOK_SECRET"):
+        Settings(**{**real, "discord_token": "t", "allowed_channel_ids": frozenset({1}),
+                    "read_role_ids": frozenset({1})}).validate()

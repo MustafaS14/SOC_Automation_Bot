@@ -2,6 +2,10 @@
 
 A Flask app in [`soc_web/`](../soc_web/) that gives analysts the bot's triage workflow in a browser. It runs as its own process (`python -m soc_web`) and uses the same incident store, hunt templates, enrichment clients, AI assistant and audit log as the Discord bot.
 
+> **Localhost only, unless a TLS proxy is in front.** The server speaks plain HTTP, so sign-in passwords and session cookies cross the network unencrypted on any address other than `127.0.0.1`. It binds to `127.0.0.1` by default. To reach it from another machine, put a TLS reverse proxy in front and keep `SOC_WEB_SECURE_COOKIES=true`. The console logs a warning if it is started on any other address.
+
+![Dashboard in the demo (mock) mode](screenshots/dashboard.png)
+
 ## What it does
 
 | Page | Minimum tier | What it does |
@@ -16,6 +20,10 @@ A Flask app in [`soc_web/`](../soc_web/) that gives analysts the bot's triage wo
 
 Tiers are the bot's (`VIEWER < READ < TRIAGE < RESPONSE < ADMIN`). **There is no isolate or release button**: the console is built without the SSH client, and the assistant is given none either.
 
+The assistant's per-tool clearance is shared code with the bot. The page-level tiers in the table are set in `soc_web/app.py` (`@needs(...)`) to match the bot's `@require(...)` commands, so if you change a command's tier in one place, change it in the other.
+
+Pages a user's tier does not allow return 403, and the nav only shows what the account can open ([screenshot](screenshots/viewer-refused.png)).
+
 ## Run it
 
 ```powershell
@@ -25,7 +33,7 @@ python -m soc_web user add alice --tier triage              # asks for the passw
 python -m soc_web                                           # http://127.0.0.1:8080
 ```
 
-The console reads the same `.env` as the bot, but needs no Discord token, role IDs or channel IDs. Point `DB_PATH` at the bot's incident database to see its incidents; alerts arrive through the bot's webhook, not the console.
+The console reads the same `.env` as the bot, but needs no Discord token, role IDs, channel IDs or `WEBHOOK_SECRET`. Point `DB_PATH` at the bot's incident database to see its incidents; alerts arrive through the bot's webhook, not the console.
 
 Account commands: `user list`, `user passwd <name>`, `user tier <name> <tier>`, `user disable <name>`, `user enable <name>`. There is no sign-up page and no admin page for accounts, on purpose: accounts are made on the machine that runs the console.
 
@@ -43,7 +51,7 @@ Account commands: `user list`, `user passwd <name>`, `user tier <name> <tier>`, 
 ## Before using it beyond localhost
 
 - The server speaks plain HTTP. For any other address put a TLS reverse proxy in front, and keep `SOC_WEB_SECURE_COOKIES=true`. The console does not trust `X-Forwarded-For`, so behind a proxy the per-address sign-in limit sees the proxy's address.
-- The bot and the console append to the same `AUDIT_LOG_PATH` from two processes. That works for these short single-line writes; if you need strict ordering, give each its own file.
+- **Shared audit log.** The bot and the console append whole lines to the same `AUDIT_LOG_PATH`, each from its own process. That is fine for this lab. If they ever run as separate services (different machines, containers or accounts), give each its own file, or use the copy in Splunk (`index=soc_audit`, set `SPLUNK_HEC_URL` and `SPLUNK_HEC_TOKEN`) as the combined record. The Audit page reads only the file it is pointed at.
 - Closing an incident is the one change that cannot be undone from the console.
 
 ## Layout

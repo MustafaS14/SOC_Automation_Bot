@@ -5,12 +5,12 @@
 <h1>Hunt</h1>
 <div class="panel">
   <form method="post" action="{{ url_for('hunt') }}">{{ csrf() }}
-    <div class="row">
+    <div class="row hunt">
       <div><label for="template">Search</label>
         <select id="template" name="template" required>
           <option value="">Choose...</option>
           {% for key, h in templates.items() %}
-            <option value="{{ key }}" {% if key == form.template %}selected{% endif %}>{{ h.label }}{% if h.param %} (needs a {{ h.param }}){% endif %}</option>
+            <option value="{{ key }}" {% if key == form.template %}selected{% endif %}>{{ h.label }}{% if h.param %} [{{ h.param }}]{% endif %}</option>
           {% endfor %}
         </select></div>
       <div><label for="window">Time window</label>

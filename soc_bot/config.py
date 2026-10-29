@@ -157,11 +157,11 @@ class Settings:
         return frozenset(hosts)
 
     def validate(self, *, require_discord: bool = True) -> None:
-        """`require_discord=False` is for the web console, which has its own logins and no Discord connection."""
+        """`require_discord=False` is for the web console: its own logins, no Discord connection, no alert webhook."""
         missing = []
         if require_discord and not self.discord_token:
             missing.append("DISCORD_TOKEN")
-        if not self.mock_mode and not self.webhook_secret:
+        if require_discord and not self.mock_mode and not self.webhook_secret:
             missing.append("WEBHOOK_SECRET")
         # Each backend is optional, but a half-configured one is an error.
         pairs = (

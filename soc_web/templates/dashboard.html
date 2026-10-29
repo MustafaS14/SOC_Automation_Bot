@@ -12,7 +12,7 @@
   <h2>Open incidents by severity</h2>
   {% for s in severities %}
     {% set n = counts.open_by_severity.get(s, 0) %}
-    <div class="row">
+    <div class="sevrow">
       <div><span class="badge sev-{{ s }}">{{ s }}</span> {{ n }}</div>
       <div><meter min="0" max="{{ [open_total, 1]|max }}" value="{{ n }}"></meter></div>
     </div>
