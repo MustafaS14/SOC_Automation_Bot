@@ -12,6 +12,9 @@ if TYPE_CHECKING:
     from ..bot import SocBot
 
 HELP_TEXT = """\
+**VIEWER**
+`/ask <question>` - ask the SOC assistant (answers depend on your tier)
+
 **READ**
 `/incident list [status] [severity] [limit]` - list incidents
 `/incident show <incident>` - details + comments
