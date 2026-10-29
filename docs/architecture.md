@@ -15,7 +15,7 @@ flowchart LR
     subgraph VIC["soc-victim · 192.168.56.20"]
         AG["Sandcat agent"]
         AUD["auditd (execve rule)<br/>+ auth.log"]
-        FB["Filebeat ⏳"]
+        FB["Filebeat ✅"]
     end
 
     subgraph SIEM["soc-siem · 192.168.56.10 🔧"]
@@ -49,8 +49,8 @@ Each VM has two adapters.
 | VM | Role | OS | Host-only IP | RAM | Status |
 |---|---|---|---|---|---|
 | `soc-attacker` | Caldera C2 / red team | Ubuntu Server 24.04.5 | 192.168.56.30 | 4 GB | ✅ |
-| `soc-victim` | Monitored endpoint | Ubuntu Desktop 24.04.5 | 192.168.56.20 | 4 GB | ✅ (Filebeat ⏳) |
-| `soc-siem` | Splunk + Logstash + bot | Ubuntu Server 24.04.5 | 192.168.56.10 | 8 GB | 🔧 (Splunk runs; Logstash ⏳) |
+| `soc-victim` | Monitored endpoint | Ubuntu Desktop 24.04.5 | 192.168.56.20 | 4 GB | ✅ |
+| `soc-siem` | Splunk + Logstash + bot | Ubuntu Server 24.04.5 | 192.168.56.10 | 8 GB, 4 CPUs | 🔧 (Splunk and Logstash run; bot ⏳) |
 
 The host-only network is isolated from the real LAN, so the attack simulation can never leave the machine.
 
@@ -60,21 +60,25 @@ The host-only network is isolated from the real LAN, so the attack simulation ca
 |---|---|---|
 | Caldera server on attacker | ✅ | Web UI on `:8888`, ran in tmux |
 | Sandcat agent on victim | ✅ | Beacons over HTTP to `192.168.56.30:8888`, group `red` |
-| auditd `execve` rule on victim | ✅ | Key `exec_cmd`; Caldera commands verified in the log |
-| Splunk in Docker on `soc-siem` | 🔧 | Running and healthy; web UI `:8000`, HEC `:8088`, REST `:8089`. Indexes (`linux`, `soc_audit`) and the HEC test still to do. Compose file in `infra/siem/` |
-| Filebeat → Logstash → Splunk | ⏳ | Next block of work |
-| Splunk detections (SPL) | ⏳ | Alerts via webhook to the bot |
+| auditd `execve` rule on victim | ✅ | Key `exec_cmd`; limited to login sessions (`auid>=1000`) to cut noise; Caldera commands verified in the log |
+| Splunk in Docker on `soc-siem` | ✅ | Healthy; web UI `:8000`, HEC `:8088` (HTTPS), REST `:8089`. Indexes `linux` and `soc_audit`; HEC token allows both. Compose file in `infra/siem/` |
+| Logstash on `soc-siem` | ✅ | Beats input `:5044`, labels and filters events, sets the real event time, sends to Splunk HEC. Pipeline in `infra/siem/logstash/pipeline/soc.conf` |
+| Filebeat on `soc-victim` | ✅ | Ships `/var/log/audit/audit.log` and `/var/log/auth.log` to Logstash. Config in `infra/filebeat/filebeat.yml`. Verified: a command typed on the victim is searchable in Splunk within seconds with the correct time |
+| Splunk detections (SPL) | ⏳ | Next: first detection for the Discovery scenario, then alerts via webhook to the bot |
 | Discord bot | 🔧 | Migrated to Splunk webhook, SQLite store, `/hunt` and SSH isolation (see `bot-refactor-plan.md`); not yet run against live Splunk or the victim VM |
 
 ## Design decisions
 
 - **Local lab instead of Sentinel/Azure.** Removes cloud cost and tenant risk, and makes the project reproducible by anyone with a laptop.
 - **Logstash between the endpoint and Splunk.** Logs are parsed, enriched, and filtered before ingestion, which keeps noise (for example `debian-sa1` cron jobs) out of the SIEM.
+- **Record only login sessions.** The auditd rule skips background services (`auid` unset). This removed more than 99 percent of the events (from over 135,000 to about 200 audit events in the same period). The cost: commands launched by a service with no login session are not seen. Accepted for now; documented in `lab-build-log.md` section 11.
+- **Plain TCP between Filebeat and Logstash, self-signed HTTPS to Splunk with verification off.** Acceptable only because everything stays on the isolated host-only network; a production setup would use certificates on both links.
 - **Own SQLite incident store.** Splunk raises alerts, but incident state (open, assigned, closed) lives in the bot's database, so triage works without a case-management product.
 - **Restricted response user.** Isolation runs over SSH as a dedicated `responder` account limited by `sudoers` to a single script, so a compromised bot cannot run arbitrary commands on the endpoint.
 
 ## Related documents
 
+- [plain-language-overview.md](plain-language-overview.md): the project explained without jargon.
 - [lab-build-log.md](lab-build-log.md): how the VMs, Caldera and the bot work were built, step by step.
 - [troubleshooting.md](troubleshooting.md): problems hit during the build, with causes and fixes.
 - [security-review.md](security-review.md): findings from reviewing the bot, how each was fixed, and what is still open.
