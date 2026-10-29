@@ -197,6 +197,8 @@ A browser version of the triage workflow, for analysts who are not in Discord. I
 $env:SOC_BOT_MOCK="true"; python -m soc_web   # demo data; prints a one-time 'demo' password
 ```
 
+It listens on `http://127.0.0.1:8000`. Accounts are created at the command line (`python -m soc_web user add <name> --tier read`) and the tiers are the bot's: viewer, read, triage, response, admin. It speaks plain HTTP, so keep it on localhost unless a TLS reverse proxy is in front (`SOC_WEB_TRUSTED_PROXIES`). Plain-language overview, settings, security notes and known limits: [docs/web-console.md](docs/web-console.md).
+
 ## Mock mode
 
 Mock mode serves sample incidents, canned Splunk rows, a fake SSH responder and threat-intel verdicts, so you can record a walkthrough without the lab:
