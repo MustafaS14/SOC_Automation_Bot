@@ -145,3 +145,36 @@ def test_link_hosts_must_be_bare_hostnames(entry):
 def test_link_hosts_are_parsed_and_lowercased_from_env(monkeypatch):
     settings = _from_env(monkeypatch, WEBHOOK_LINK_HOSTS=" Splunk.Lab , 192.168.56.10 ")
     assert settings.webhook_link_hosts == ("splunk.lab", "192.168.56.10")
+
+
+def test_viewer_or_admin_roles_alone_are_enough():
+    Settings(**{**BASE, "read_role_ids": frozenset(), "viewer_role_ids": frozenset({7})}).validate()
+    Settings(**{**BASE, "read_role_ids": frozenset(), "admin_role_ids": frozenset({8})}).validate()
+
+
+def test_ai_backend_must_be_known_and_mock_needs_mock_mode():
+    Settings(**{**BASE, "ai_backend": "claude_code"}).validate()
+    with pytest.raises(ConfigError, match="AI_BACKEND"):
+        Settings(**{**BASE, "ai_backend": "gpt"}).validate()
+    with pytest.raises(ConfigError, match="SOC_BOT_MOCK"):
+        Settings(**{**BASE, "ai_backend": "mock"}).validate()
+    Settings(**{**BASE, "ai_backend": "mock", "mock_mode": True}).validate()
+
+
+def test_ai_limits_must_be_sane():
+    with pytest.raises(ConfigError, match="AI_"):
+        Settings(**{**BASE, "ai_daily_calls": 0}).validate()
+    with pytest.raises(ConfigError, match="AI_TIMEOUT"):
+        Settings(**{**BASE, "ai_timeout": 1.0}).validate()
+
+
+def test_ai_defaults_are_off(monkeypatch):
+    monkeypatch.setenv("DISCORD_TOKEN", "t")
+    monkeypatch.setenv("ALLOWED_CHANNEL_IDS", "1")
+    monkeypatch.setenv("RBAC_VIEWER_ROLE_IDS", "7")
+    monkeypatch.setenv("WEBHOOK_SECRET", "s")
+    for name in ("AI_BACKEND", "SOC_BOT_MOCK"):
+        monkeypatch.delenv(name, raising=False)
+    assert Settings.from_env().ai_backend == "off"
+    monkeypatch.setenv("SOC_BOT_MOCK", "true")
+    assert Settings.from_env().ai_backend == "mock"
