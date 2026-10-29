@@ -49,3 +49,20 @@ class AuditLogger:
         }
         self._logger.info(json.dumps(entry, default=str))
         return entry
+
+
+def read_recent(path: str | Path, limit: int = 20) -> list[dict[str, Any]]:
+    """The newest `limit` audit entries, oldest first. Unreadable lines are skipped; a missing file is empty."""
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    entries: list[dict[str, Any]] = []
+    for line in lines[-max(1, limit) * 3 :]:
+        try:
+            obj = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(obj, dict):
+            entries.append(obj)
+    return entries[-max(1, limit) :]
