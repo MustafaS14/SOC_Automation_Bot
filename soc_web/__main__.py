@@ -10,9 +10,11 @@ from __future__ import annotations
 import argparse
 import getpass
 import logging
+import os
 import secrets
 import sys
 
+from soc_bot.audit import AuditLogger
 from soc_bot.config import ConfigError, Settings
 
 from .config import LOOPBACK_HOSTS, WILDCARD_HOSTS, WebSettings
@@ -37,27 +39,40 @@ def _user_command(args: argparse.Namespace) -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
     users = _store(web)
+    audit_log = AuditLogger(os.getenv("AUDIT_LOG_PATH", "audit.jsonl"))
+    operator = f"cli:{getpass.getuser()}"
+
+    def audit(action: str, target: str, **details: str) -> None:
+        # Account changes made at the command line leave the same trail as the ones made in the console.
+        audit_log.record(actor=operator, actor_id=0, action=action, target=target, outcome="success",
+                         channel="cli", **details)
+
     try:
         if args.action == "add":
             user = users.create(args.username, _ask_password(), args.tier)
+            audit("account.create", user.username, tier=user.tier_name)
             print(f"Created {user.username} ({user.tier_name}).")
         elif args.action == "list":
             for u in users.list():
                 print(f"{u.username:<32} {u.tier_name:<9} {'active' if u.active else 'disabled'}")
         elif args.action == "passwd":
             users.set_password(args.username, _ask_password())
+            audit("account.passwd", args.username)
             print(f"Password changed for {args.username}.")
         elif args.action == "tier":
             users.set_tier(args.username, args.tier)
+            audit("account.tier", args.username, tier=args.tier)
             print(f"{args.username} is now {args.tier}.")
         else:
             users.set_active(args.username, args.action == "enable")
+            audit(f"account.{args.action}", args.username)
             print(f"{args.username} {args.action}d.")
     except UserError as exc:
         print(f"Error: {exc}", file=sys.stderr)
         return 1
     finally:
         users.close()
+        audit_log.close()
     return 0
 
 

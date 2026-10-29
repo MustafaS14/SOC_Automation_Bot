@@ -3,10 +3,33 @@ from __future__ import annotations
 import json
 import logging
 import queue
+import re
 from datetime import datetime, timezone
 from logging.handlers import QueueHandler, QueueListener
 from pathlib import Path
 from typing import Any
+
+
+# Things that look like secrets are blanked before anything is written, because questions and comments are free text
+# and people paste keys into them. Not a guarantee, a safety net.
+_SECRET_PATTERNS = [re.compile(p, re.IGNORECASE) for p in (
+    r"\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}",                              # API keys (Anthropic, OpenAI style)
+    r"\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{20,}",             # GitHub tokens
+    r"\bxox[abprs]-[A-Za-z0-9-]{10,}",                                 # Slack tokens
+    r"\bAKIA[0-9A-Z]{16}\b",                                           # AWS access key ids
+    r"\b[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}\b",    # Discord bot tokens
+    r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}",   # JWTs
+    r"\bBearer\s+[A-Za-z0-9._~+/=-]{16,}",
+    r"\b(?:password|passwd|pwd|secret|token|api[_-]?key)\b\s*[:=]\s*\S+",
+    r"\b[A-Fa-f0-9]{40,}\b",                                           # long hex strings (hashes, keys)
+)]
+REDACTED = "[redacted]"
+
+
+def redact(text: str) -> str:
+    for pattern in _SECRET_PATTERNS:
+        text = pattern.sub(REDACTED, text)
+    return text
 
 
 class AuditLogger:
@@ -45,7 +68,7 @@ class AuditLogger:
             "action": action,
             "target": target,
             "outcome": outcome,
-            **details,
+            **{k: redact(v) if isinstance(v, str) else v for k, v in details.items()},
         }
         self._logger.info(json.dumps(entry, default=str))
         return entry

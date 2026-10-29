@@ -166,3 +166,23 @@ def test_host_name_strips_port(header, name):
     from soc_web.app import host_name
 
     assert host_name(header) == name
+
+
+def test_cli_account_changes_are_audited(tmp_path, monkeypatch):
+    import json
+    import types
+
+    from soc_web import __main__ as cli
+
+    monkeypatch.setenv("AUDIT_LOG_PATH", str(tmp_path / "audit.jsonl"))
+    monkeypatch.setenv("SOC_WEB_USERS_DB", str(tmp_path / "u.db"))
+    monkeypatch.setenv("SOC_WEB_SECRET_KEY", "k" * 40)
+    monkeypatch.setattr(cli, "_ask_password", lambda: "a long enough password")
+    for action, extra in (("add", {"tier": "read"}), ("tier", {"tier": "admin"}), ("passwd", {}),
+                          ("disable", {}), ("enable", {})):
+        assert cli._user_command(types.SimpleNamespace(action=action, username="alice", **extra)) == 0
+    entries = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [e["action"] for e in entries] == ["account.create", "account.tier", "account.passwd",
+                                              "account.disable", "account.enable"]
+    assert all(e["channel"] == "cli" and e["actor"].startswith("cli:") for e in entries)
+    assert "a long enough password" not in json.dumps(entries)
