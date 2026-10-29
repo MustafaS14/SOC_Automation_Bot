@@ -1,6 +1,7 @@
 import json
 import os
 import stat
+import sys
 
 import pytest
 
@@ -25,6 +26,7 @@ def write_script(directory, body):
     return str(path)
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="uses a POSIX shell script as a fake claude")
 async def test_claude_code_gets_no_tools_and_no_bot_secrets(tmp_path):
     out = tmp_path / "out"
     out.mkdir()
@@ -67,12 +69,14 @@ async def test_missing_command_is_a_backend_error():
         await ClaudeCodeBackend("/nonexistent/claude").complete("s", "p")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="uses a POSIX shell script as a fake claude")
 async def test_nonzero_exit_is_a_backend_error(tmp_path):
     command = write_script(tmp_path, "#!/bin/sh\ncat >/dev/null\necho boom >&2\nexit 3\n")
     with pytest.raises(BackendError, match="exit status 3"):
         await ClaudeCodeBackend(command, timeout=10).complete("s", "p")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="uses a POSIX shell script as a fake claude")
 async def test_timeout_kills_the_process(tmp_path):
     command = write_script(tmp_path, "#!/bin/sh\nsleep 30\n")
     with pytest.raises(BackendError, match="timed out"):
