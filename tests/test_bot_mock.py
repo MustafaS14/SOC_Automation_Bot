@@ -57,6 +57,7 @@ async def post(mock_mode):
         settings=SimpleNamespace(alert_channel_id=9, mock_mode=mock_mode),
         is_ready=lambda: True,
         get_channel=lambda channel_id: channel,
+        assistant=None,
     )
     await SocBot.post_alert(fake_bot, Incident(id=3, rule="r", severity="High", status="New"))
     return channel.sent
