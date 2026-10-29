@@ -19,6 +19,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from soc_bot import hunts
 from soc_bot.ai import split_plain_words
+from soc_bot.ai.prompt import DENIED_REPLY, OFF_TOPIC_REPLY
 from soc_bot.ai.tools import LEVEL_LABELS
 from soc_bot.audit import entry_channel, entry_denied, search
 from soc_bot.clients import APIError, NotConfiguredError, NotFoundError
@@ -98,6 +99,30 @@ def build_timeline(inc: Any, acks: list[dict[str, Any]]) -> list[dict[str, Any]]
         events.append({"when": when, "kind": "ack", "label": "Acknowledged", "who": str(a.get("actor", "")), "text": ""})
     events.sort(key=lambda e: e["when"] or datetime.min.replace(tzinfo=timezone.utc))
     return events
+
+
+# Questions worth asking at each level (links that fill the box; nothing is sent until the user presses Ask). A
+# last non-admin example deliberately reaches above the user's level (and the admin's last is off topic), so a
+# refusal can be seen working.
+_ANALYST = ("Summarise incident 1", "Which incidents are open?", "Is 203.0.113.9 known to be malicious?")
+EXAMPLES = {
+    Permission.VIEWER: ("How many incidents are open?", "How many open incidents are High severity?",
+                        "Summarise incident 1", "Which host is affected by incident 1?"),
+    Permission.READ: (*_ANALYST, "What did the audit log record today?"),
+    Permission.TRIAGE: (*_ANALYST, "What did the audit log record today?"),
+    Permission.RESPONSE: (*_ANALYST, "What did the audit log record today?"),
+    Permission.ADMIN: (*_ANALYST, "What did the audit log record today?", "What is the weather like?"),
+}
+
+
+def refusal_kind(text: str, denied: bool) -> str | None:
+    """"clearance" or "off_topic" when the assistant declined to answer, else None."""
+    stripped = text.strip()
+    if stripped.startswith(OFF_TOPIC_REPLY):
+        return "off_topic"
+    if stripped.startswith(DENIED_REPLY) or (denied and len(stripped) < 120):
+        return "clearance"
+    return None
 
 
 def audit_row(e: dict[str, Any]) -> dict[str, Any]:
@@ -441,6 +466,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     @needs(Permission.VIEWER)
     def ask():
         question, answer = "", None
+        if request.method == "GET":
+            question = request.args.get("q", "").strip()[:500]  # an example link fills the box; nothing is asked yet
         if request.method == "POST":
             question = request.form.get("question", "").strip()
             if backends.assistant is None:
@@ -457,7 +484,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         technical, plain = split_plain_words(answer.text) if answer else ("", None)
         blocks = parse_answer(technical).blocks if answer else []
         return render_template("ask.html", question=question, answer=answer, blocks=blocks, plain=plain,
-                               enabled=backends.assistant is not None)
+                               enabled=backends.assistant is not None, examples=EXAMPLES[g.user.tier],
+                               refusal=refusal_kind(answer.text, answer.denied) if answer else None)
 
     # ---- audit log ----------------------------------------------------------------------------------------
 

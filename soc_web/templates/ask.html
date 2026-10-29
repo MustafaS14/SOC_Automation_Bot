@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import csrf %}
+{% from "_macros.html" import csrf, sev %}
 {% block title %}Ask - SOC Console{% endblock %}
 {% block content %}
 <h1>Ask the SOC assistant</h1>
@@ -10,15 +10,57 @@
     <textarea id="question" name="question" maxlength="500" required>{{ question }}</textarea>
     <p><button class="primary" type="submit">Ask</button></p>
   </form>
-  <p class="muted">Read-only. It answers at your level ({{ level_label[user.tier] }}), so a viewer gets summaries without hostnames or IPs. It cannot change anything.</p>
+  <p class="muted">Read-only. You are asking at the <strong>{{ level_label[user.tier] }}</strong> level, so {% if user.tier < P.READ %}you get summaries without hostnames or IPs{% elif user.tier < P.RESPONSE %}you can see hosts, IPs and hunt results but not isolation previews or the audit log{% elif user.tier < P.ADMIN %}you can also preview what an isolation would do, but not see the audit log{% else %}you can ask about everything the assistant can see, including the audit log{% endif %}. It cannot change anything.</p>
+  <h2>Try asking</h2>
+  <ul class="examples">
+    {% for e in examples %}<li><a href="{{ url_for('ask', q=e) }}">{{ e }}</a></li>{% endfor %}
+  </ul>
   {% else %}
   <p class="muted">The assistant is switched off (AI_BACKEND=off).</p>
   {% endif %}
 </div>
-{% if answer %}
+{% if answer and refusal %}
+<div class="panel refusal" role="alert">
+  <h2>{{ 'Not allowed at your level' if refusal == 'clearance' else 'Not something I can help with' }}</h2>
+  <p>{{ answer.text }}</p>
+  <p class="muted">{% if refusal == 'clearance' %}This is the access check working: you asked at the {{ level_label[user.tier] }} level, and what you asked for needs a higher one. Nothing was looked up.{% else %}The assistant only answers questions about this SOC's incidents and data.{% endif %}</p>
+</div>
+{% elif answer %}
 <div class="panel">
   <h2>Answer</h2>
-  <div class="answer">{{ answer.text }}</div>
+  <div class="answer">
+  {% for b in blocks %}
+    {% if b.kind == 'facts' %}
+      {% if b.title %}<h3 class="atitle">{{ b.title }}</h3>{% endif %}
+      <dl class="facts">
+        {% for k, v in b.pairs %}
+          <dt>{{ pretty(k) }}</dt>
+          <dd>{% if k|lower == 'severity' and v in stars %}{{ sev(v) }}{% elif v in ('n/a', '') %}<span class="muted">none</span>{% else %}{{ v }}{% endif %}</dd>
+        {% endfor %}
+      </dl>
+    {% elif b.kind == 'table' %}
+      <div class="table-wrap"><table>
+        <thead><tr>{% for c in b.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for row in b.rows %}<tr>{% for cell in row %}<td>{% if cell in stars %}{{ sev(cell) }}{% else %}{{ cell }}{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      </table></div>
+    {% elif b.kind == 'rows' %}
+      <dl class="facts assess">
+        {% for r in b.items %}
+          <dt>{{ r.label }}</dt>
+          <dd>{% if r.level %}<span class="badge conf-{{ r.level }}">{{ r.level }}</span> {% endif %}{{ r.value }}</dd>
+        {% endfor %}
+      </dl>
+    {% else %}
+      <p>{{ b.text }}</p>
+    {% endif %}
+  {% endfor %}
+  </div>
 </div>
+{% if plain and not refusal %}
+<div class="panel plain">
+  <h2>In plain words</h2>
+  <p>{{ plain }}</p>
+</div>
+{% endif %}
 {% endif %}
 {% endblock %}

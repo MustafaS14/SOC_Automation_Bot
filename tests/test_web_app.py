@@ -540,3 +540,32 @@ def test_timeline_escapes_comment_text(stack):
     post(client, "/incidents/1/comment", "/incidents/1", message="<img src=x onerror=alert(1)>")
     html = client.get("/incidents/1").get_data(as_text=True)
     assert "<img src=x" not in html and "&lt;img src=x" in html
+
+
+def test_ask_shows_level_and_examples_that_fit_it(stack):
+    app, _, _ = stack
+    viewer = login(app, "viewer")[0].get("/ask").get_data(as_text=True)
+    assert "<strong>Viewer</strong>" in viewer and "without hostnames or IPs" in viewer
+    assert "Which host is affected by incident 1?" in viewer and "audit log record" not in viewer
+    admin = login(app, "admin")[0].get("/ask").get_data(as_text=True)
+    assert "<strong>Admin</strong>" in admin and "audit log record" in admin
+
+
+def test_example_link_fills_the_box_without_asking(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "viewer")
+    html = client.get('/ask?q=How%20many%20incidents%3F%22%3E%3Cscript%3E').get_data(as_text=True)
+    assert "How many incidents?&#34;&gt;&lt;script&gt;" in html and "<script>" not in html
+    assert "<h2>Answer</h2>" not in html
+
+
+def test_refusals_get_their_own_panel(stack):
+    app, _, _ = stack
+    client, _ = login(app, "viewer")
+    clearance = post(client, "/ask", "/ask", question="Which host is affected by incident 1?").get_data(as_text=True)
+    assert 'class="panel refusal"' in clearance and "Not allowed at your level" in clearance
+    assert "outside your clearance level" in clearance and "<h2>Answer</h2>" not in clearance
+    off_topic = post(client, "/ask", "/ask", question="What's the weather tomorrow?").get_data(as_text=True)
+    assert 'class="panel refusal"' in off_topic and "Not something I can help with" in off_topic
+    ok = post(client, "/ask", "/ask", question="How many incidents are open?").get_data(as_text=True)
+    assert 'class="panel refusal"' not in ok and "<h2>Answer</h2>" in ok
