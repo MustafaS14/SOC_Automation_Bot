@@ -15,7 +15,7 @@ import sys
 
 from soc_bot.config import ConfigError, Settings
 
-from .config import WebSettings
+from .config import LOOPBACK_HOSTS, WILDCARD_HOSTS, WebSettings
 from .users import TIERS, UserError, UserStore
 
 
@@ -87,9 +87,12 @@ def _serve() -> int:
             print(f"\nDemo account created. Sign in as 'demo' with password: {password}\n", flush=True)
     elif users.count() == 0:
         print("No accounts yet. Create one with: python -m soc_web user add <name> --tier triage", file=sys.stderr)
-    if web.host not in ("127.0.0.1", "::1", "localhost"):
-        log.warning("Listening on %s over plain HTTP. Put a TLS reverse proxy in front before using real credentials.",
-                    web.host)
+    if web.host not in LOOPBACK_HOSTS and not web.trusted_proxies:
+        log.warning("Listening on %s over plain HTTP with no TLS proxy declared (SOC_WEB_TRUSTED_PROXIES=0). Sign-in "
+                    "passwords and session cookies would cross the network unencrypted. Put a TLS reverse proxy in "
+                    "front and set SOC_WEB_TRUSTED_PROXIES=1, or keep to 127.0.0.1.", web.host)
+    if web.host in WILDCARD_HOSTS and not web.allowed_hosts:
+        log.warning("Listening on every address with no SOC_WEB_ALLOWED_HOSTS, so any Host header is accepted.")
 
     app = create_app(web, backends, users)
     log.info("Console at http://%s:%d", web.host, web.port)

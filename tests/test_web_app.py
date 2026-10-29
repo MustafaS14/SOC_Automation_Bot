@@ -402,3 +402,33 @@ def test_logout_leaves_other_users_signed_in(stack):
     b, _ = login(app, "read")
     post(a, "/logout", "/")
     assert b.get("/").status_code == 200
+
+
+def test_host_header_outside_the_allowed_list_is_refused(stack):
+    import dataclasses
+
+    from soc_web.app import create_app
+
+    app, backends, users = stack
+    web = dataclasses.replace(app.config["WEB"], allowed_hosts=("localhost", "console.lab"))
+    strict = create_app(web, backends, users)
+    assert strict.test_client().get("/login", headers={"Host": "console.lab:8000"}).status_code == 200
+    assert strict.test_client().get("/login", headers={"Host": "LOCALHOST"}).status_code == 200
+    assert strict.test_client().get("/login", headers={"Host": "evil.example"}).status_code == 400
+
+
+def test_forwarded_address_is_trusted_only_when_a_proxy_is_declared(stack):
+    import dataclasses
+
+    from soc_web.app import create_app
+
+    app, backends, users = stack
+    proxied = create_app(dataclasses.replace(app.config["WEB"], trusted_proxies=1), backends, users)
+    for each in (app, proxied):
+        client = each.test_client()
+        page = client.get("/login").get_data(as_text=True)
+        client.post("/login", data={"username": "nobody", "password": "x" * 12, "csrf_token": token(page)},
+                    headers={"X-Forwarded-For": "6.6.6.6"})
+    backends.audit_log.close()
+    ips = [json.loads(line)["ip"] for line in open(backends.settings.audit_log_path, encoding="utf-8")]
+    assert ips == ["127.0.0.1", "6.6.6.6"]

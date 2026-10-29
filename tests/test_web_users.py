@@ -146,3 +146,23 @@ def test_old_database_without_session_version_is_upgraded(tmp_path):
     store = UserStore(path)
     assert store.list()[0].session_version == 0
     store.close()
+
+
+@pytest.mark.parametrize("bind, configured, expected", [
+    ("127.0.0.1", "", ("127.0.0.1", "::1", "localhost")),
+    ("10.0.0.5", "", ("127.0.0.1", "::1", "localhost", "10.0.0.5")),
+    ("0.0.0.0", "", ()),
+    ("0.0.0.0", "Console.Lab, 10.0.0.5", ("console.lab", "10.0.0.5")),
+])
+def test_default_allowed_hosts(bind, configured, expected):
+    from soc_web.config import default_hosts
+
+    assert default_hosts(bind, configured) == expected
+
+
+@pytest.mark.parametrize("header, name", [("Example.com:8000", "example.com"), ("[::1]:8000", "::1"),
+                                          ("localhost", "localhost"), ("10.0.0.5:80", "10.0.0.5")])
+def test_host_name_strips_port(header, name):
+    from soc_web.app import host_name
+
+    assert host_name(header) == name

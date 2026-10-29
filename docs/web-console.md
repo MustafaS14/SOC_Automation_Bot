@@ -22,6 +22,8 @@ Tiers are the bot's (`VIEWER < READ < TRIAGE < RESPONSE < ADMIN`). **There is no
 
 The assistant's per-tool clearance is shared code with the bot. The page-level tiers in the table are set in `soc_web/app.py` (`@needs(...)`) to match the bot's `@require(...)` commands, so if you change a command's tier in one place, change it in the other.
 
+**How answers are shown.** On the Ask page the assistant's answer is laid out as a titled card of labelled rows (severity as a badge, "none" instead of `n/a`), a table when there are several rows (hunt results, incident lists), and a separate block for Confidence and Not checked. Free-form text from a real model stays as paragraphs. Below it, a box called **In plain words** shows 2 or 3 non-technical sentences. The assistant's prompt asks for that part after "Not checked:", and never on a refusal, so refusals stay word for word. The parsing lives in `soc_web/answers.py`. The prompt change is in `soc_bot/ai/prompt.py`, so Discord answers carry the same "In plain words:" paragraph, as plain text.
+
 Pages a user's tier does not allow return 403, and the nav only shows what the account can open ([screenshot](screenshots/viewer-refused.png)).
 
 ## Run it
@@ -30,7 +32,7 @@ Pages a user's tier does not allow return 403, and the nav only shows what the a
 pip install -r requirements.txt
 python -c "import secrets; print(secrets.token_hex(32))"   # put the result in SOC_WEB_SECRET_KEY in .env
 python -m soc_web user add alice --tier triage              # asks for the password twice
-python -m soc_web                                           # http://127.0.0.1:8080
+python -m soc_web                                           # http://127.0.0.1:8000
 ```
 
 The console reads the same `.env` as the bot, but needs no Discord token, role IDs, channel IDs or `WEBHOOK_SECRET`. Point `DB_PATH` at the bot's incident database to see its incidents; alerts arrive through the bot's webhook, not the console.
@@ -65,5 +67,15 @@ soc_web/
 ├── security.py      # CSRF, sign-in throttle, response headers
 ├── users.py         # accounts: hashing, tiers, lockout
 ├── templates/       # Jinja pages (no JavaScript)
-└── static/style.css
+└── static/
+    ├── style.css    # the space-UI theme: pure CSS, including the planet
+    └── fonts/       # Orbitron and Exo 2, self-hosted, with their SIL Open Font License files
 ```
+
+## The look
+
+A retro space-UI theme: cream, teal and orange on charcoal, ridged menu tabs for incidents with a coloured severity marker, and a planet on the dashboard with one orbiting moon for each severity that still has open incidents.
+
+It is cosmetic. Tier names are shown as ranks (Cadet, Scout, Pilot, Guardian, Commander for VIEWER up to ADMIN), the threat level comes from the worst severity still open, and severities get star ratings. None of it changes what a tier may do.
+
+It is built to fit the security policy: no JavaScript, no inline styles and no outside fonts, so the policy still reads `default-src 'none'` with `style-src 'self'` and `font-src 'self'`. The planet is drawn in CSS. Orbits stop turning when the browser asks for reduced motion.

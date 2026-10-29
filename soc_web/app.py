@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
 from werkzeug.exceptions import HTTPException
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from soc_bot import hunts
 from soc_bot.ai import split_plain_words
@@ -58,6 +59,14 @@ def threat_level(open_by_severity: dict[str, int]) -> tuple[str, int, str]:
     return "clear", 1, "Nothing is open"
 
 
+def host_name(host: str) -> str:
+    """A Host header without its port, lowercased: 'Example.com:8000' -> 'example.com', '[::1]:8000' -> '::1'."""
+    host = host.strip().lower()
+    if host.startswith("["):
+        return host[1:].split("]", 1)[0]
+    return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
 def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     app = Flask(__name__)
     app.config.update(
@@ -69,6 +78,10 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         PERMANENT_SESSION_LIFETIME=timedelta(hours=web.session_hours),
         MAX_CONTENT_LENGTH=32 * 1024,
     )
+    app.config["WEB"] = web
+    if web.trusted_proxies:
+        n = web.trusted_proxies
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n, x_host=n)  # type: ignore[method-assign]
     add_headers(app)
     store, runner = backends.store, backends.runner
     login_throttle = Throttle(limit=20, period=300)
@@ -127,6 +140,9 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     @app.before_request
     def load_user() -> None:
         g.user = None
+        if web.allowed_hosts and host_name(request.host) not in web.allowed_hosts:
+            log.warning("Refused a request with Host %r", request.host[:100])
+            abort(400, "This address is not one the console answers to.")
         uid = session.get("uid")
         if uid is not None:
             # Read from the database on every request, so a disabled account or a changed tier applies at once.
