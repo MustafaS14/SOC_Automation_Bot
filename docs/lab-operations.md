@@ -15,12 +15,8 @@ How to start, use and stop the lab. For how it was built, see [lab-build-log.md]
 
 ## Starting the lab
 
-1. **Plug the laptop in** and check the Windows hypervisor is still off. In an administrator PowerShell:
-   ```powershell
-   bcdedit /enum {current} | findstr hypervisorlaunchtype
-   ```
-   It should say `Off`. If it says `Auto`, follow section 1 of the build log and restart.
-2. **Start the VMs** in VirtualBox, the SIEM first, then the victim, then the attacker. A normal start is fine; to run without a window, right-click the VM and choose a headless start. Give each VM a minute or two to finish booting. If a guest freezes with kernel stack traces, power it off, set it to 1 CPU and try again.
+1. **Plug the laptop in.** The Windows hypervisor can stay on `Auto` (needed for WSL) as long as `soc-siem` has 4 CPUs. If freezes with *soft lockup* messages return, see the hypervisor fallback in [troubleshooting.md](troubleshooting.md).
+2. **Start the VMs** in VirtualBox, the SIEM first, then the victim, then the attacker. A normal start is fine. **Splunk needs 10 to 15 minutes to become healthy after a cold boot**, so check `docker ps` on `soc-siem` for `(healthy)` before opening the web page; a VM resumed from a saved state is ready much sooner. to run without a window, right-click the VM and choose a headless start. Give each VM a minute or two to finish booting. If a guest freezes with kernel stack traces, power it off, set it to 1 CPU and try again.
 3. **Open one PowerShell window per VM** and connect:
    ```powershell
    ssh <your-user>@192.168.56.30
@@ -48,7 +44,7 @@ Then run an operation. The first one is described in [../attack-scenarios/01-dis
 
 1. Stop the Sandcat agent on the victim (`Ctrl+C` in the terminal where it runs).
 2. Stop Caldera: `tmux attach -t caldera`, press `Ctrl+C`, then `exit` to close the tmux session.
-3. Shut each VM down from inside with `sudo poweroff` and wait for the window to close. Closing the VirtualBox window or saving the machine state is not the same as a clean shutdown.
+3. Shut `soc-attacker` and `soc-victim` down from inside with `sudo poweroff` and wait for the window to close. For `soc-siem`, prefer **Close, Save the machine state** in VirtualBox: it resumes in seconds with Splunk already running, instead of the 10 to 15 minute cold start. Make sure the host disk has about 20 GB free.
 4. Unplugging or sleeping the laptop with VMs running can corrupt a guest; shut down first.
 
 ## Snapshots
@@ -57,7 +53,7 @@ A snapshot is a saved state of a VM that you can return to. Take one before anyt
 
 - **Take one:** in VirtualBox select the VM, open its **Snapshots** tab (called *Instantanés* in the French interface), click *Take*, and give it a clear name.
 - **Restore one:** select the snapshot and choose *Restore*. Anything done after that snapshot is lost, so shut the VM down first and take a new snapshot if you want to keep the current state.
-- **Current chain:** attacker `clean base` → `caldera installed`; victim `clean base` → `network ready` → `agent working`.
+- **Current chain:** attacker `clean base` → `caldera installed`; victim `clean base` → `network ready` → `agent working` → `pipeline tuned`; SIEM `splunk running` (if taken) → `pipeline tuned`.
 
 ## Credentials and secrets
 
@@ -68,6 +64,6 @@ A snapshot is a saved state of a VM that you can return to. Take one before anyt
 ## Resource tips
 
 - The three VMs need 4 + 4 + 8 = 16 GB of RAM. Close other heavy programs while the lab runs.
-- If a VM becomes slow or freezes, lower it to 1 or 2 CPUs and check the laptop is plugged in.
+- If the attacker or victim becomes slow or freezes, lower it to 1 or 2 CPUs and check the laptop is plugged in. `soc-siem` is the opposite: it needs **4 CPUs** (2 caused freezes).
 - You do not need every VM for every task: for attack tests only the attacker and victim are needed; the SIEM is needed once logs flow into Splunk.
-- After `soc-siem` boots, Splunk starts by itself (`restart: unless-stopped`). Check with `docker ps` in `~/siem`: it should say `healthy` after a few minutes. The web UI is at `http://192.168.56.10:8000`. Shut the VM down with `sudo poweroff` so the Splunk data is written cleanly.
+- After `soc-siem` boots, Splunk starts by itself (`restart: unless-stopped`). Check with `docker ps` in `~/siem`: it should say `healthy` after 10 to 15 minutes from a cold boot; Logstash starts after Splunk is healthy. The web UI is at `http://192.168.56.10:8000`. Use *Save the machine state* or `sudo poweroff` so the Splunk data is written cleanly. On the victim, auditd and Filebeat start by themselves; check Filebeat with `sudo systemctl status filebeat`. A quick end-to-end test: run `whoami` on the victim, then search `index=linux sourcetype=linux:audit earliest=-5m type=EXECVE | table _time a0 a1` in Splunk.
