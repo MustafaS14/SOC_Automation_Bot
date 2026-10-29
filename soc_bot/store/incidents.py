@@ -122,6 +122,24 @@ class IncidentStore:
 
         return await self._run(op)
 
+    async def counts(self) -> dict[str, dict[str, int]]:
+        """Incident totals by status and, for open incidents, by severity."""
+
+        def op(db: sqlite3.Connection) -> dict[str, dict[str, int]]:
+            by_status = {
+                row["status"]: row["n"]
+                for row in db.execute("SELECT status, COUNT(*) AS n FROM incidents GROUP BY status")
+            }
+            open_by_severity = {
+                row["severity"]: row["n"]
+                for row in db.execute(
+                    "SELECT severity, COUNT(*) AS n FROM incidents WHERE status != 'Closed' GROUP BY severity"
+                )
+            }
+            return {"status": by_status, "open_by_severity": open_by_severity}
+
+        return await self._run(op)
+
     async def get(self, incident_id: int) -> Incident:
         def op(db: sqlite3.Connection) -> Incident:
             row = db.execute("SELECT * FROM incidents WHERE id = ?", (incident_id,)).fetchone()
