@@ -1,23 +1,31 @@
-{% macro sev(value) %}<span class="badge sev-{{ value }}">{{ value }}</span>{% endmacro %}
+{% macro sev(value) %}<span class="badge sev-{{ value }}">{{ value }}</span> <span class="stars s-{{ value }}" aria-hidden="true">{{ '★' * stars.get(value, 1) }}</span>{% endmacro %}
+
+{# A planet with one orbiting moon per severity that still has open incidents. Decoration: the counts are shown as text beside it. #}
+{% macro system(open) %}
+<div class="system" aria-hidden="true">
+  <span class="disc"></span><span class="ring r1"></span><span class="ring r2"></span>
+  <span class="orbit o-info">{% if open.get('Informational') %}<i class="moon m-Informational"></i>{% endif %}</span>
+  <span class="orbit o-low">{% if open.get('Low') %}<i class="moon m-Low"></i>{% endif %}</span>
+  <span class="orbit o-med">{% if open.get('Medium') %}<i class="moon m-Medium"></i>{% endif %}</span>
+  <span class="orbit o-high">{% if open.get('High') %}<i class="moon m-High"></i>{% endif %}</span>
+  <span class="planet"></span>
+</div>
+{% endmacro %}
 
 {% macro incident_table(rows) %}
-<div class="table-wrap"><table>
-  <thead><tr><th>#</th><th>Rule</th><th>Severity</th><th>Status</th><th>Host</th><th>Updated</th></tr></thead>
-  <tbody>
+<div class="slots">
   {% for i in rows %}
-    <tr>
-      <td><a href="{{ url_for('incident', incident_id=i.id) }}">#{{ i.id }}</a></td>
-      <td>{{ i.rule }}</td>
-      <td>{{ sev(i.severity) }}</td>
-      <td>{{ i.status }}</td>
-      <td>{{ i.host or '-' }}</td>
-      <td class="muted">{{ i.updated|when }}</td>
-    </tr>
+    <a class="slot sev-{{ i.severity }}" href="{{ url_for('incident', incident_id=i.id) }}">
+      <div class="main">
+        <div class="name">{{ i.rule }}</div>
+        <div class="meta">#{{ i.id }} &middot; {{ i.host or 'no host' }} &middot; {{ i.status }} &middot; updated {{ i.updated|when }}</div>
+      </div>
+      <div class="tag">{{ sev(i.severity) }}</div>
+    </a>
   {% else %}
-    <tr><td colspan="6" class="muted">No incidents match.</td></tr>
+    <div class="slot empty">No incidents match.</div>
   {% endfor %}
-  </tbody>
-</table></div>
+</div>
 {% endmacro %}
 
 {% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endmacro %}

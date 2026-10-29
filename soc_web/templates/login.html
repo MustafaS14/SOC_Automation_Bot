@@ -1,15 +1,21 @@
 {% extends "base.html" %}
+{% from "_macros.html" import system %}
 {% block title %}Sign in - SOC Console{% endblock %}
 {% block content %}
-<div class="login panel">
-  <h1>Sign in</h1>
-  <form method="post" action="{{ url_for('login') }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <p><label for="username">Username</label>
-      <input type="text" id="username" name="username" autocomplete="username" autofocus required></p>
-    <p><label for="password">Password</label>
-      <input type="password" id="password" name="password" autocomplete="current-password" required></p>
-    <button class="primary" type="submit">Sign in</button>
-  </form>
+<div class="cabinet">
+  <p class="ready">Ready screen</p>
+  {{ system({'High': 1, 'Medium': 1, 'Low': 1, 'Informational': 1}) }}
+  <div class="panel">
+    <h1>Sign in</h1>
+    <form method="post" action="{{ url_for('login') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <p><label for="username">Username</label>
+        <input type="text" id="username" name="username" autocomplete="username" autofocus required></p>
+      <p><label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password" required></p>
+      <button class="primary" type="submit">Play</button>
+    </form>
+  </div>
+  <p class="hint" aria-hidden="true">Insert credentials to continue</p>
 </div>
 {% endblock %}

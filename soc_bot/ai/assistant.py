@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections import deque
 from collections.abc import Callable
@@ -13,14 +14,14 @@ from datetime import datetime, timezone
 from ..rbac import Permission
 from ..validators import ValidationError
 from .backends import AiBackend, BackendError
-from .prompt import SYSTEM_PROMPT, TOOL_PROTOCOL_REMINDER
+from .prompt import PLAIN_MARKER, SYSTEM_PROMPT, TOOL_PROTOCOL_REMINDER
 from .tools import LEVEL_LABELS, ToolContext, describe_args, execute, tools_for
 
 log = logging.getLogger("soc_bot")
 
 MAX_QUESTION_CHARS = 500
 MAX_LOOKUPS = 3
-MAX_ANSWER_CHARS = 1500
+MAX_ANSWER_CHARS = 2200  # room for the answer, its evidence and the plain-words part
 
 
 @dataclass
@@ -47,6 +48,18 @@ class _Window:
             return False
         self._hits.append(now)
         return True
+
+
+_PLAIN_RE = re.compile(rf"^[ 	]*{re.escape(PLAIN_MARKER)}[ 	]*", re.IGNORECASE | re.MULTILINE)
+
+
+def split_plain_words(text: str) -> tuple[str, str | None]:
+    """(the technical answer, the plain-words part or None). The marker must start a line."""
+    match = _PLAIN_RE.search(text)
+    if match is None:
+        return text, None
+    plain = text[match.end():].strip()
+    return text[: match.start()].rstrip(), plain or None
 
 
 def _safe(text: str) -> str:

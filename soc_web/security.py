@@ -13,7 +13,7 @@ from flask import Flask, Response, abort, request, session
 CSRF_KEY = "csrf"
 
 CSP = (
-    "default-src 'none'; style-src 'self'; img-src 'self' data:; form-action 'self'; "
+    "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' data:; form-action 'self'; "
     "base-uri 'none'; frame-ancestors 'none'"
 )
 

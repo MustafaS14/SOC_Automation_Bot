@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..config import Settings
-from .assistant import AiAnswer, Assistant
+from .assistant import AiAnswer, Assistant, split_plain_words
 from .backends import AiBackend, BackendError, ClaudeCodeBackend, MockBackend
 from .tools import ToolContext
 
@@ -26,4 +26,4 @@ def build_assistant(settings: Settings, ctx: ToolContext) -> Assistant | None:
     )
 
 
-__all__ = ["AiAnswer", "AiBackend", "Assistant", "BackendError", "ClaudeCodeBackend", "MockBackend", "ToolContext", "build_assistant"]
+__all__ = ["AiAnswer", "AiBackend", "Assistant", "BackendError", "ClaudeCodeBackend", "MockBackend", "ToolContext", "build_assistant", "split_plain_words"]

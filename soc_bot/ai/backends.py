@@ -14,7 +14,7 @@ import shutil
 import tempfile
 from typing import Protocol
 
-from .prompt import DENIED_REPLY, OFF_TOPIC_REPLY
+from .prompt import DENIED_REPLY, OFF_TOPIC_REPLY, PLAIN_MARKER
 
 log = logging.getLogger("soc_bot")
 
@@ -103,6 +103,51 @@ def _call(tool: str, **args: str) -> str:
     return json.dumps({"tool": tool, "args": args})
 
 
+_STATUS_WORDS = {
+    "New": "nobody has picked it up yet",
+    "Active": "someone is already working on it",
+    "Closed": "it has already been looked at and closed",
+}
+_VERDICT_WORDS = {
+    "Malicious": "Several reputation services flag this address as dangerous, so it is worth taking seriously.",
+    "Suspicious": "Some reputation services have a bad record for this address, so it deserves a closer look.",
+    "Clean": "The reputation services found nothing bad about this address.",
+    "Internal": "This address belongs to the lab's own network, so outside services were not asked about it.",
+    "Incomplete": "The reputation check did not fully work, so this is not a clean bill of health.",
+}
+
+
+def _plain_words(tool: str, data: str) -> str:
+    """Two short non-technical sentences for the mock answer, built only from the lookup result."""
+    if tool in ("incident_summary", "get_incident"):
+        severity = re.search(r"severity=(\w+)", data)
+        status = re.search(r"status=(\w+)", data)
+        how = f"rated {severity.group(1).lower()}" if severity else "of unknown seriousness"
+        state = _STATUS_WORDS.get(status.group(1), "its state is unclear") if status else "its state is unclear"
+        return (f"This is an alert from the monitoring system, {how}, and {state}. "
+                "It means something unusual was noticed, not that anything has been proven.")
+    if tool == "incident_counts":
+        total = re.search(r"open incidents: (\d+)", data)
+        n = total.group(1) if total else "some"
+        return (f"There are {n} alerts that nobody has finished dealing with. "
+                "The number shows how busy the team is, not how much danger there is.")
+    if tool == "list_incidents":
+        return "This is a list of the latest alerts, newest first. Open the one you care about to see what happened."
+    if tool == "run_hunt":
+        if data.startswith("search returned no rows"):
+            return ("The system searched its records and found nothing that matches. "
+                    "That is only reassuring if it was the right thing to search for.")
+        return "The system searched its records and these are the matching entries. Each line is something that happened on a machine."
+    if tool == "enrich_ip":
+        verdict = re.search(r"verdict=(\w+)", data)
+        return _VERDICT_WORDS.get(verdict.group(1) if verdict else "", "The reputation check gave no clear answer.")
+    if tool == "isolation_preview":
+        return "Nothing was changed. This only describes what cutting a machine off the network would do, and a person has to approve that."
+    if tool == "recent_audit":
+        return "This is a record of who used the system recently and what they did, kept so actions can be checked later."
+    return "This is what the monitoring system currently knows. A person should check the details before acting."
+
+
 _SOC_WORDS = (
     "incident", "alert", "host", "ip", "detect", "attack", "log", "command", "isolat", "splunk", "soc",
     "malware", "login", "ssh", "sudo", "audit", "hunt", "severity", "triage", "mitre", "discovery", "caldera",
@@ -125,7 +170,11 @@ class MockBackend:
                 return _reply(DENIED_REPLY)
             if data.startswith("ERROR"):
                 return _reply("I couldn't look that up: " + data[7:160])
-            return _reply(f"{data[:500]}\nConfidence: low (mock assistant, no real model).\nNot checked: everything else.")
+            tool = lookups[-1][0]
+            return _reply(
+                f"{data[:500]}\nConfidence: low (mock assistant, no real model).\nNot checked: everything else."
+                f"\n\n{PLAIN_MARKER} {_plain_words(tool, data)}"
+            )
 
         if any(w in question for w in _SECRET_WORDS):
             return _reply("I can't share credentials or configuration.")

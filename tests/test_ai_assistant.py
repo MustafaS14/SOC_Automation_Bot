@@ -1,8 +1,8 @@
 import pytest
 
-from soc_bot.ai.assistant import MAX_LOOKUPS, Assistant, build_prompt, parse_reply
+from soc_bot.ai.assistant import MAX_ANSWER_CHARS, MAX_LOOKUPS, Assistant, build_prompt, parse_reply, split_plain_words
 from soc_bot.ai.backends import BackendError, MockBackend
-from soc_bot.ai.prompt import DENIED_REPLY, OFF_TOPIC_REPLY, SYSTEM_PROMPT
+from soc_bot.ai.prompt import DENIED_REPLY, OFF_TOPIC_REPLY, PLAIN_MARKER, SYSTEM_PROMPT
 from soc_bot.ai.tools import ToolContext
 from soc_bot.rbac import Permission
 from soc_bot.store import IncidentStore
@@ -131,7 +131,7 @@ async def test_backend_failure_is_generic_and_leaks_nothing(store):
 
 async def test_long_answers_are_trimmed(store):
     result = await make(Script(answer("x" * 5000)), store).ask("tell me about incidents", Permission.VIEWER, 1)
-    assert len(result.text) == 1500
+    assert len(result.text) == MAX_ANSWER_CHARS
 
 
 async def test_question_validation(store):
@@ -215,3 +215,82 @@ async def test_mock_audit_question_needs_admin(store):
 
 def test_prompt_marks_the_last_round(store=None):
     assert "Answer now" in build_prompt(Permission.READ, "q", [], final=True)
+
+
+
+# --- the plain-words part ---
+
+def test_the_prompt_asks_for_plain_words_after_not_checked_and_never_on_refusals():
+    assert PLAIN_MARKER == "In plain words:"
+    section = SYSTEM_PROMPT[SYSTEM_PROMPT.index("PLAIN WORDS"):SYSTEM_PROMPT.index("BOUNDARIES")]
+    assert PLAIN_MARKER in section and 'after the "not checked:" line' in section.lower()
+    assert "Never add it to the two fixed replies" in section
+    assert "Add no new facts" in section
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Answer.\nNot checked: x.\n\nIn plain words: It is fine.", ("Answer.\nNot checked: x.", "It is fine.")),
+        ("A.\n  in plain words:   lower case too", ("A.", "lower case too")),
+        ("No such section here.", ("No such section here.", None)),
+        ("A.\n\nIn plain words:   ", ("A.", None)),  # a marker with nothing after it adds no box
+        ("Mentions In plain words: mid-line only", ("Mentions In plain words: mid-line only", None)),
+        (OFF_TOPIC_REPLY, (OFF_TOPIC_REPLY, None)),
+    ],
+)
+def test_split_plain_words(text, expected):
+    assert split_plain_words(text) == expected
+
+
+async def test_mock_answers_end_with_a_plain_words_part(store):
+    await store.create(rule="Discovery", severity="High", host="soc-victim", src_ip="185.220.101.4")
+    for question, level in (
+        ("how many incidents are open?", Permission.VIEWER),
+        ("summarize incident 1", Permission.VIEWER),
+        ("show me the details of incident 1", Permission.READ),
+        ("what commands ran on soc-victim in the last hour?", Permission.READ),
+    ):
+        result = await mock_ask(store, question, level)
+        technical, plain = split_plain_words(result.text)
+        assert plain and len(plain.split(".")) >= 2, question
+        assert "Not checked:" in technical and PLAIN_MARKER not in technical
+        # the plain part must not repeat the technical field names or the raw addresses
+        for jargon in ("severity=", "src_ip", "rule=", "185.220.101.4", "abuse_score"):
+            assert jargon not in plain, (question, jargon)
+
+
+async def test_refusals_stay_exact_and_get_no_plain_words(store):
+    for question, level, expected in (
+        ("What's the weather tomorrow?", Permission.ADMIN, OFF_TOPIC_REPLY),
+        ("what commands ran on soc-victim in the last hour?", Permission.VIEWER, DENIED_REPLY),
+        ("who asked what in the audit log?", Permission.RESPONSE, DENIED_REPLY),
+    ):
+        result = await mock_ask(store, question, level)
+        assert result.text == expected and PLAIN_MARKER not in result.text
+
+
+async def test_the_plain_words_part_survives_the_length_limit(store):
+    text = "x" * (MAX_ANSWER_CHARS - 200) + f"\n\n{PLAIN_MARKER} Short and clear."
+    result = await make(Script(answer(text)), store).ask("tell me about incidents", Permission.VIEWER, 1)
+    assert split_plain_words(result.text)[1] == "Short and clear."
+
+
+@pytest.mark.parametrize(
+    "tool,data,must_contain",
+    [
+        ("enrich_ip", "ip=1.2.3.4; verdict=Malicious; public=True", "dangerous"),
+        ("enrich_ip", "ip=1.2.3.4; verdict=Incomplete; public=True", "not a clean bill of health"),
+        ("enrich_ip", "ip=10.0.0.1; verdict=Internal; public=False", "lab's own network"),
+        ("run_hunt", "search returned no rows", "nothing that matches"),
+        ("isolation_preview", "host soc-victim is in the responder inventory", "Nothing was changed"),
+        ("incident_counts", "open incidents: 3; by status: New: 3", "3 alerts"),
+        ("get_incident", "incident #1: severity=High; status=Active", "someone is already working on it"),
+        ("some_future_tool", "whatever", "check the details before acting"),
+    ],
+)
+def test_mock_plain_words_wording(tool, data, must_contain):
+    from soc_bot.ai.backends import _plain_words
+
+    text = _plain_words(tool, data)
+    assert must_contain in text and "=" not in text and ";" not in text  # no raw field syntax leaks through
