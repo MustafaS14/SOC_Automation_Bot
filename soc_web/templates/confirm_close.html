@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from "_macros.html" import sev, csrf %}
+{% block title %}Confirm close - SOC Console{% endblock %}
+{% block content %}
+<h1>Close incident #{{ incident.id }}?</h1>
+<div class="panel">
+  <dl class="facts">
+    <dt>Rule</dt><dd>{{ incident.rule }}</dd>
+    <dt>Severity</dt><dd>{{ sev(incident.severity) }}</dd>
+    <dt>Host</dt><dd>{{ incident.host or '-' }}</dd>
+    <dt>Classification</dt><dd>{{ label }}</dd>
+    <dt>Reason</dt><dd>{{ why }}</dd>
+  </dl>
+</div>
+<form method="post" action="{{ url_for('close_incident', incident_id=incident.id) }}" class="actions">
+  {{ csrf() }}
+  <input type="hidden" name="step" value="confirm">
+  <input type="hidden" name="classification" value="{{ classification }}">
+  <input type="hidden" name="comment" value="{{ why }}">
+  <button class="danger" type="submit">Close incident</button>
+  <a class="btn" href="{{ url_for('incident', incident_id=incident.id) }}">Cancel</a>
+</form>
+{% endblock %}

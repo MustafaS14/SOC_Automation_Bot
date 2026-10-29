@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Audit - SOC Console{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+<div class="panel">
+  <p class="muted">The newest {{ entries|length }} entries from the bot and the console, newest first.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Outcome</th><th>Where</th></tr></thead>
+    <tbody>
+    {% for e in entries %}
+      <tr>
+        <td class="code">{{ (e.get('ts') or '')[:19]|replace('T', ' ') }}</td>
+        <td>{{ e.get('actor', '') }}</td>
+        <td class="code">{{ e.get('action', '') }}</td>
+        <td>{{ e.get('target', '') }}</td>
+        <td>{{ e.get('outcome', '') }}</td>
+        <td class="muted">{{ 'web' if e.get('channel') == 'web' else 'discord' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="muted">The audit log is empty.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</div>
+{% endblock %}

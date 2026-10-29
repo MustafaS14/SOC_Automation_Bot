@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Ask - SOC Console{% endblock %}
+{% block content %}
+<h1>Ask the SOC assistant</h1>
+<div class="panel">
+  {% if enabled %}
+  <form method="post" action="{{ url_for('ask') }}">{{ csrf() }}
+    <label for="question">Your question</label>
+    <textarea id="question" name="question" maxlength="500" required>{{ question }}</textarea>
+    <p><button class="primary" type="submit">Ask</button></p>
+  </form>
+  <p class="muted">Read-only. It answers at your level ({{ level_label[user.tier] }}), so a viewer gets summaries without hostnames or IPs. It cannot change anything.</p>
+  {% else %}
+  <p class="muted">The assistant is switched off (AI_BACKEND=off).</p>
+  {% endif %}
+</div>
+{% if answer %}
+<div class="panel">
+  <h2>Answer</h2>
+  <div class="answer">{{ answer.text }}</div>
+</div>
+{% endif %}
+{% endblock %}

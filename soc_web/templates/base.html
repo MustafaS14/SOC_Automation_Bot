@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}SOC Console{% endblock %}</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+{% if mock %}<div class="banner">MOCK MODE: demo data only, nothing real is read or changed</div>{% endif %}
+<header class="top"><div class="bar">
+  <a class="brand" href="{{ url_for('dashboard') if user else url_for('login') }}">SOC Console</a>
+  {% if user %}
+  <nav>
+    <a href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}class="on"{% endif %}>Dashboard</a>
+    {% if user.tier >= P.READ %}
+    <a href="{{ url_for('incidents') }}" {% if request.endpoint in ('incidents', 'incident') %}class="on"{% endif %}>Incidents</a>
+    <a href="{{ url_for('hunt') }}" {% if request.endpoint == 'hunt' %}class="on"{% endif %}>Hunt</a>
+    <a href="{{ url_for('enrich_page') }}" {% if request.endpoint in ('enrich_page', 'enrich_ip') %}class="on"{% endif %}>Enrich</a>
+    {% endif %}
+    <a href="{{ url_for('ask') }}" {% if request.endpoint == 'ask' %}class="on"{% endif %}>Ask</a>
+    {% if user.tier >= P.ADMIN %}<a href="{{ url_for('audit_view') }}" {% if request.endpoint == 'audit_view' %}class="on"{% endif %}>Audit</a>{% endif %}
+  </nav>
+  <div class="who">
+    <span>{{ user.username }} <span class="badge">{{ user.tier_name }}</span></span>
+    <form method="post" action="{{ url_for('logout') }}" class="inline">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="link" type="submit">Sign out</button>
+    </form>
+  </div>
+  {% endif %}
+</div></header>
+<main>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}
+  {% endwith %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

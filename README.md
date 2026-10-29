@@ -189,6 +189,14 @@ Example audit entry:
 - **The limit is global.** Anyone holding a leaked secret can use up the whole budget and so delay real alerts. If the secret may have leaked, rotate `WEBHOOK_SECRET` and update the Splunk alert action (or the proxy that adds the header) to send the new value.
 - **Network exposure:** the receiver binds to `127.0.0.1` by default. Keep it there or on a private lab network. Anything wider sends the secret in clear text over plain HTTP, so it needs TLS (for example a reverse proxy) or a network you trust.
 
+## Web console
+
+A browser version of the triage workflow, for analysts who are not in Discord. It reuses the bot's incident store, hunt templates, enrichment, assistant, role tiers and audit log. It has its own accounts and cannot isolate a host. Setup, tiers and security notes are in [docs/web-console.md](docs/web-console.md).
+
+```powershell
+$env:SOC_BOT_MOCK="true"; python -m soc_web   # demo data; prints a one-time 'demo' password
+```
+
 ## Mock mode
 
 Mock mode serves sample incidents, canned Splunk rows, a fake SSH responder and threat-intel verdicts, so you can record a walkthrough without the lab:

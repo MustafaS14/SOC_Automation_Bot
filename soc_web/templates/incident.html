@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "_macros.html" import sev, csrf %}
+{% block title %}Incident #{{ incident.id }} - SOC Console{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('incidents') }}">&larr; Incidents</a></p>
+<h1>#{{ incident.id }} {{ incident.rule }}</h1>
+<div class="panel">
+  <dl class="facts">
+    <dt>Severity</dt><dd>{{ sev(incident.severity) }}</dd>
+    <dt>Status</dt><dd>{{ incident.status }}{% if incident.classification %} ({{ classes.get(incident.classification, incident.classification) }}){% endif %}</dd>
+    <dt>Host</dt><dd>{{ incident.host or '-' }}</dd>
+    <dt>Source IP</dt><dd>{{ incident.src_ip or '-' }}</dd>
+    <dt>Assignee</dt><dd>{{ incident.assignee or '-' }}</dd>
+    <dt>Created</dt><dd>{{ incident.created|when }}</dd>
+    <dt>Updated</dt><dd>{{ incident.updated|when }}</dd>
+    {% set link = incident.url|safe_url %}
+    {% if link %}<dt>Splunk</dt><dd><a href="{{ link }}" rel="noopener noreferrer">Open the alert</a></dd>{% endif %}
+    <dt>Description</dt><dd>{{ incident.description or '-' }}</dd>
+  </dl>
+</div>
+
+{% if user.tier >= P.TRIAGE and incident.status != 'Closed' or user.tier >= P.READ and incident.src_ip %}
+<div class="panel actions">
+  {% if user.tier >= P.TRIAGE and incident.status == 'New' %}
+  <form method="post" action="{{ url_for('acknowledge', incident_id=incident.id) }}">{{ csrf() }}
+    <button class="primary" type="submit">Acknowledge</button></form>
+  {% endif %}
+  {% if incident.src_ip %}
+  <form method="post" action="{{ url_for('enrich_incident', incident_id=incident.id) }}">{{ csrf() }}
+    <button type="submit">Enrich {{ incident.src_ip }}</button></form>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <h2>Comments ({{ incident.comments|length }})</h2>
+  {% for c in incident.comments %}
+    <div class="comment"><div class="meta">{{ c.author }} &middot; {{ c.created|when }}</div><p>{{ c.body }}</p></div>
+  {% else %}
+    <p class="muted">No comments yet.</p>
+  {% endfor %}
+  {% if user.tier >= P.TRIAGE %}
+  <form method="post" action="{{ url_for('comment', incident_id=incident.id) }}">{{ csrf() }}
+    <label for="message">Add a comment</label>
+    <textarea id="message" name="message" maxlength="1000" required></textarea>
+    <p><button type="submit">Add comment</button></p>
+  </form>
+  {% endif %}
+</div>
+
+{% if user.tier >= P.TRIAGE and incident.status != 'Closed' %}
+<div class="panel">
+  <h2>Close this incident</h2>
+  <form method="post" action="{{ url_for('close_incident', incident_id=incident.id) }}">{{ csrf() }}
+    <div class="row">
+      <div><label for="classification">Classification</label>
+        <select id="classification" name="classification" required>
+          <option value="">Choose...</option>
+          {% for key, label in classes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+        </select></div>
+    </div>
+    <label for="why">Why</label>
+    <textarea id="why" name="comment" maxlength="1000" required></textarea>
+    <p><button type="submit">Review and close</button></p>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

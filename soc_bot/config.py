@@ -102,7 +102,7 @@ class Settings:
     ai_max_rows: int = 20
 
     @classmethod
-    def from_env(cls) -> Settings:
+    def from_env(cls, *, require_discord: bool = True) -> Settings:
         load_dotenv()
         settings = cls(
             discord_token=os.getenv("DISCORD_TOKEN", "").strip(),
@@ -145,7 +145,7 @@ class Settings:
             ai_daily_calls=_int_default("AI_DAILY_CALLS", 150),
             ai_max_rows=_int_default("AI_MAX_ROWS", 20),
         )
-        settings.validate()
+        settings.validate(require_discord=require_discord)
         return settings
 
     @property
@@ -156,9 +156,10 @@ class Settings:
             hosts.add(host.lower())
         return frozenset(hosts)
 
-    def validate(self) -> None:
+    def validate(self, *, require_discord: bool = True) -> None:
+        """`require_discord=False` is for the web console, which has its own logins and no Discord connection."""
         missing = []
-        if not self.discord_token:
+        if require_discord and not self.discord_token:
             missing.append("DISCORD_TOKEN")
         if not self.mock_mode and not self.webhook_secret:
             missing.append("WEBHOOK_SECRET")
@@ -188,7 +189,7 @@ class Settings:
             raise ConfigError("WEBHOOK_PORT must be between 1 and 65535.")
         if any("/" in h or ":" in h or " " in h for h in self.webhook_link_hosts):
             raise ConfigError("WEBHOOK_LINK_HOSTS must be bare hostnames, without scheme, port or path.")
-        if not (
+        if require_discord and not (
             self.read_role_ids or self.triage_role_ids or self.response_role_ids
             or self.viewer_role_ids or self.admin_role_ids
         ):
@@ -204,7 +205,7 @@ class Settings:
             raise ConfigError("AI_TIMEOUT_SECONDS must be at least 5.")
         if min(self.ai_user_questions_per_hour, self.ai_auto_notes_per_hour, self.ai_daily_calls, self.ai_max_rows) < 1:
             raise ConfigError("The AI_* limits must each be at least 1.")
-        if not self.allowed_channel_ids:
+        if require_discord and not self.allowed_channel_ids:
             raise ConfigError(
                 "No channels configured. Set ALLOWED_CHANNEL_IDS so commands are not accepted everywhere."
             )

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Enrich - SOC Console{% endblock %}
+{% block content %}
+<h1>IP reputation</h1>
+<div class="panel">
+  <form method="post" action="{{ url_for('enrich_ip') }}">{{ csrf() }}
+    <div class="row">
+      <div><label for="ip">IP address</label>
+        <input type="text" id="ip" name="ip" value="{{ report.ip if report else '' }}" maxlength="45" required></div>
+      <div><label for="incident">Record on incident (optional)</label>
+        <input type="text" id="incident" name="incident" value="{{ incident_id or '' }}" maxlength="10"></div>
+    </div>
+    <button class="primary" type="submit">Look up</button>
+  </form>
+  <p class="muted">Private addresses are never sent to AbuseIPDB or VirusTotal. A failed lookup shows as Incomplete, never Clean.</p>
+</div>
+{% if report %}
+<div class="panel">
+  <h2>{{ report.ip }} <span class="badge v-{{ report.verdict }}">{{ report.verdict }}</span></h2>
+  <dl class="facts">
+    <dt>AbuseIPDB score</dt><dd>{{ report.abuse_score if report.abuse_score is not none else 'n/a' }}{% if report.abuse_reports is not none %} ({{ report.abuse_reports }} reports){% endif %}</dd>
+    <dt>VirusTotal</dt><dd>{% if report.vt_malicious is not none %}{{ report.vt_malicious }} malicious, {{ report.vt_suspicious }} suspicious, {{ report.vt_harmless }} harmless{% else %}n/a{% endif %}</dd>
+    <dt>Country</dt><dd>{{ report.country or 'n/a' }}</dd>
+    <dt>ISP / owner</dt><dd>{{ report.isp or report.as_owner or 'n/a' }}</dd>
+    <dt>Usage</dt><dd>{{ report.usage_type or 'n/a' }}</dd>
+    {% if report.errors %}<dt>Problems</dt><dd>{{ report.errors|join('; ') }}</dd>{% endif %}
+  </dl>
+  {% if incident_id %}<p>Recorded as a comment on <a href="{{ url_for('incident', incident_id=incident_id) }}">incident #{{ incident_id }}</a>.</p>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

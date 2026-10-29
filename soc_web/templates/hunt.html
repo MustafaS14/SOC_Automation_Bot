@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "_macros.html" import csrf %}
+{% block title %}Hunt - SOC Console{% endblock %}
+{% block content %}
+<h1>Hunt</h1>
+<div class="panel">
+  <form method="post" action="{{ url_for('hunt') }}">{{ csrf() }}
+    <div class="row">
+      <div><label for="template">Search</label>
+        <select id="template" name="template" required>
+          <option value="">Choose...</option>
+          {% for key, h in templates.items() %}
+            <option value="{{ key }}" {% if key == form.template %}selected{% endif %}>{{ h.label }}{% if h.param %} (needs a {{ h.param }}){% endif %}</option>
+          {% endfor %}
+        </select></div>
+      <div><label for="window">Time window</label>
+        <select id="window" name="window">
+          {% for key, label in windows.items() %}<option value="{{ key }}" {% if key == form.window %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select></div>
+      <div><label for="target">Host or IP</label>
+        <input type="text" id="target" name="target" value="{{ form.target }}" maxlength="253"></div>
+    </div>
+    <button class="primary" type="submit">Run search</button>
+  </form>
+  <p class="muted">Only predefined, read-only searches run. What you type fills a validated host or IP, never SPL.</p>
+</div>
+{% if rows is not none %}
+<div class="panel">
+  <h2>Results ({{ total }}{% if total > rows|length %}, showing {{ rows|length }}{% endif %})</h2>
+  {% if rows %}
+  <div class="table-wrap"><table>
+    <thead><tr>{% for c in columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for row in rows %}<tr>{% for c in columns %}<td {% if c == '_raw' %}class="raw"{% endif %}>{{ row.get(c, '') }}</td>{% endfor %}</tr>{% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">The search returned no rows.</p>{% endif %}
+</div>
+{% endif %}
+{% endblock %}

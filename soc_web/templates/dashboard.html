@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% from "_macros.html" import incident_table %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="grid">
+  <div class="stat"><div class="n">{{ open_total }}</div><div class="l">Open incidents</div></div>
+  <div class="stat"><div class="n">{{ counts.status.get('New', 0) }}</div><div class="l">New, not yet acknowledged</div></div>
+  <div class="stat"><div class="n">{{ counts.status.get('Active', 0) }}</div><div class="l">Active</div></div>
+  <div class="stat"><div class="n">{{ counts.status.get('Closed', 0) }}</div><div class="l">Closed</div></div>
+</div>
+<div class="panel">
+  <h2>Open incidents by severity</h2>
+  {% for s in severities %}
+    {% set n = counts.open_by_severity.get(s, 0) %}
+    <div class="row">
+      <div><span class="badge sev-{{ s }}">{{ s }}</span> {{ n }}</div>
+      <div><meter min="0" max="{{ [open_total, 1]|max }}" value="{{ n }}"></meter></div>
+    </div>
+  {% endfor %}
+</div>
+{% if user.tier >= P.READ %}
+<div class="panel">
+  <h2>Latest open incidents</h2>
+  {{ incident_table(recent) }}
+  <p><a href="{{ url_for('incidents') }}">All incidents</a></p>
+</div>
+{% else %}
+<p class="muted">Your account sees summaries only. Use <a href="{{ url_for('ask') }}">Ask</a> for questions about incidents.</p>
+{% endif %}
+{% endblock %}

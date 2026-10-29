@@ -7,3 +7,4 @@ venv/
 audit.jsonl
 incidents.db
 .pytest_cache/
+web_users.db

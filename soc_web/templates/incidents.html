@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% from "_macros.html" import incident_table %}
+{% block title %}Incidents - SOC Console{% endblock %}
+{% block content %}
+<h1>Incidents</h1>
+<form method="get" action="{{ url_for('incidents') }}" class="filters">
+  <div><label for="status">Status</label>
+    <select id="status" name="status">
+      {% for s in statuses %}<option value="{{ s }}" {% if s == status %}selected{% endif %}>{{ s|capitalize }}</option>{% endfor %}
+    </select></div>
+  <div><label for="severity">Severity</label>
+    <select id="severity" name="severity">
+      <option value="">Any</option>
+      {% for s in severities %}<option value="{{ s }}" {% if s == severity %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select></div>
+  <div><label for="limit">How many</label>
+    <input type="number" id="limit" name="limit" min="1" max="50" value="{{ limit }}"></div>
+  <button type="submit">Filter</button>
+</form>
+<div class="panel">{{ incident_table(incidents) }}</div>
+{% endblock %}

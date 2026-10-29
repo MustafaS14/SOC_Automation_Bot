@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Sign in - SOC Console{% endblock %}
+{% block content %}
+<div class="login panel">
+  <h1>Sign in</h1>
+  <form method="post" action="{{ url_for('login') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p><label for="username">Username</label>
+      <input type="text" id="username" name="username" autocomplete="username" autofocus required></p>
+    <p><label for="password">Password</label>
+      <input type="password" id="password" name="password" autocomplete="current-password" required></p>
+    <button class="primary" type="submit">Sign in</button>
+  </form>
+</div>
+{% endblock %}
