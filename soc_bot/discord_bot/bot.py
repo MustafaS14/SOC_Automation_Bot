@@ -12,6 +12,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from .. import webhook
+from ..ai import Assistant, ToolContext, build_assistant
 from ..audit import AuditLogger
 from ..clients import (
     APIError,
@@ -30,7 +31,7 @@ from ..validators import ValidationError
 from . import embeds
 from .alerts import AlertButton, alert_view
 from .checks import AccessDenied
-from .cogs import EnrichmentCog, GeneralCog, HuntCog, IncidentCog, ResponseCog
+from .cogs import AskCog, EnrichmentCog, GeneralCog, HuntCog, IncidentCog, ResponseCog
 
 log = logging.getLogger("soc_bot")
 
@@ -57,6 +58,8 @@ class SocBot(commands.Bot):
             triage_role_ids=settings.triage_role_ids,
             response_role_ids=settings.response_role_ids,
             allowed_channel_ids=settings.allowed_channel_ids,
+            viewer_role_ids=settings.viewer_role_ids,
+            admin_role_ids=settings.admin_role_ids,
         )
         self.audit_log = AuditLogger(settings.audit_log_path)
         self._http: httpx.AsyncClient | None = None
@@ -68,11 +71,26 @@ class SocBot(commands.Bot):
         self.hec: Any = None
         self.ssh: Any = None
         self.enrichment: Any = None
+        self.assistant: Assistant | None = None
 
     async def setup_hook(self) -> None:
         await self._init_backends()
+        self.assistant = build_assistant(
+            self.settings,
+            ToolContext(
+                store=self.store,
+                splunk=self.splunk,
+                enrichment=self.enrichment,
+                ssh=self.ssh,
+                isolation_denylist=self.settings.isolation_denylist,
+                audit_log_path=self.settings.audit_log_path,
+                max_rows=self.settings.ai_max_rows,
+            ),
+        )
         self.add_dynamic_items(AlertButton)
-        for cog in (IncidentCog(self), EnrichmentCog(self), HuntCog(self), ResponseCog(self), GeneralCog(self)):
+        for cog in (
+            IncidentCog(self), EnrichmentCog(self), HuntCog(self), ResponseCog(self), GeneralCog(self), AskCog(self),
+        ):
             await self.add_cog(cog)
         self.tree.on_error = self.on_app_command_error  # type: ignore[method-assign]
         await self._start_webhook()
@@ -146,6 +164,26 @@ class SocBot(commands.Bot):
             if self.settings.mock_mode:
                 embed.set_footer(text="MOCK MODE")
             await channel.send(embed=embed, view=alert_view(incident.id))
+            if self.assistant is not None:
+                self._spawn(self._post_triage_note(incident, channel))
+
+    async def _post_triage_note(self, incident: Incident, channel: discord.abc.Messageable) -> None:
+        """A short AI suggestion under a new alert. Failures never affect the alert itself."""
+        assert self.assistant is not None
+        try:
+            answer = await self.assistant.triage_note(incident.id)
+            entry = self.audit_log.record(
+                actor="triage-assistant", actor_id=0, action="ai.triage_note", target=f"#{incident.id}",
+                outcome=answer.outcome, tools=",".join(answer.tools_used) or None, calls=answer.calls,
+            )
+            if self.hec:
+                self._spawn(self.hec.send(entry))
+            if answer.outcome != "answered":
+                return
+            await self.store.add_comment(incident.id, "triage-assistant", answer.text)
+            await channel.send(embed=embeds.ai_note(incident.id, answer.text))
+        except Exception:
+            log.exception("Triage note for incident #%s failed", incident.id)
 
     async def on_ready(self) -> None:
         log.info("Logged in as %s (%s)", self.user, getattr(self.user, "id", "?"))
