@@ -47,4 +47,4 @@ class HuntCog(commands.Cog):
         rows = await self.bot.splunk.search(spl, earliest=earliest)
         await interaction.followup.send(embed=embeds.hunt_results(hunts.HUNTS[template].label, window, rows))
         await self.bot.audit(interaction, "hunt.run", template, "success", notify=False,
-                             window=window, target=target, rows=len(rows))
+                             window=window, hunt_target=target, rows=len(rows))
