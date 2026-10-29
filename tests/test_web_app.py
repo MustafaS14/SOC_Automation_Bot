@@ -515,3 +515,28 @@ def test_audit_page_is_closed_to_other_tiers(stack):
     app, _, _ = stack
     for tier in ("viewer", "read", "triage"):
         assert login(app, tier)[0].get("/audit").status_code == 403
+
+
+def test_incident_timeline_orders_alert_ack_notes_and_close(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "triage")
+    inc = backends.runner.run(backends.store.create(rule="Timeline rule", severity="High", host="h1", src_ip="203.0.113.9"))
+    post(client, f"/incidents/{inc.id}/ack", f"/incidents/{inc.id}")
+    backends.runner.run(backends.store.add_comment(inc.id, "triage-assistant", "Likely brute force, T1110."))
+    backends.runner.run(backends.store.add_comment(inc.id, "bob@discord", "IP enrichment 203.0.113.9: verdict Malicious"))
+    post(client, f"/incidents/{inc.id}/comment", f"/incidents/{inc.id}", message="Looking at it")
+    post(client, f"/incidents/{inc.id}/close", f"/incidents/{inc.id}", classification="true_positive",
+         comment="Confirmed", step="confirm")
+    backends.audit_log.close()  # flush the queued audit lines to the file the page reads
+    html = client.get(f"/incidents/{inc.id}").get_data(as_text=True)
+    order = ["Alert raised", "Acknowledged", "AI triage note", "IP enrichment", "Comment", "Closed"]
+    positions = [html.index(f"<strong>{label}</strong>") for label in order]
+    assert positions == sorted(positions)
+
+
+def test_timeline_escapes_comment_text(stack):
+    app, _, _ = stack
+    client, _ = login(app, "triage")
+    post(client, "/incidents/1/comment", "/incidents/1", message="<img src=x onerror=alert(1)>")
+    html = client.get("/incidents/1").get_data(as_text=True)
+    assert "<img src=x" not in html and "&lt;img src=x" in html

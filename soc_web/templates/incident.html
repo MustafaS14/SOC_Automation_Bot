@@ -2,7 +2,7 @@
 {% from "_macros.html" import sev, csrf %}
 {% block title %}Incident #{{ incident.id }} - SOC Console{% endblock %}
 {% block content %}
-<p><a href="{{ url_for('incidents') }}">&larr; Incidents</a></p>
+<a class="back" href="{{ url_for('incidents') }}">Incidents</a>
 <h1>#{{ incident.id }} {{ incident.rule }}</h1>
 <div class="panel">
   <dl class="facts">
@@ -33,17 +33,20 @@
 {% endif %}
 
 <div class="panel">
-  <h2>Comments ({{ incident.comments|length }})</h2>
-  {% for c in incident.comments %}
-    <div class="comment"><div class="meta">{{ c.author }} &middot; {{ c.created|when }}</div><p>{{ c.body }}</p></div>
-  {% else %}
-    <p class="muted">No comments yet.</p>
+  <h2>Timeline</h2>
+  <ol class="timeline">
+  {% for e in timeline %}
+    <li class="ev ev-{{ e.kind }}">
+      <div class="meta"><strong>{{ e.label }}</strong>{% if e.who %} &middot; {{ e.who }}{% endif %} &middot; {{ e.when|when }}</div>
+      {% if e.text %}<p>{{ e.text }}</p>{% endif %}
+    </li>
   {% endfor %}
+  </ol>
+  {% if not incident.comments %}<p class="muted">No comments yet.</p>{% endif %}
   {% if user.tier >= P.TRIAGE %}
-  <form method="post" action="{{ url_for('comment', incident_id=incident.id) }}">{{ csrf() }}
-    <label for="message">Add a comment</label>
-    <textarea id="message" name="message" maxlength="1000" required></textarea>
-    <p><button type="submit">Add comment</button></p>
+  <form class="compact" method="post" action="{{ url_for('comment', incident_id=incident.id) }}">{{ csrf() }}
+    <textarea id="message" name="message" maxlength="1000" rows="1" placeholder="Add a comment..." aria-label="Add a comment" required></textarea>
+    <button type="submit">Add</button>
   </form>
   {% endif %}
 </div>
@@ -51,17 +54,13 @@
 {% if user.tier >= P.TRIAGE and incident.status != 'Closed' %}
 <div class="panel">
   <h2>Close this incident</h2>
-  <form method="post" action="{{ url_for('close_incident', incident_id=incident.id) }}">{{ csrf() }}
-    <div class="row">
-      <div><label for="classification">Classification</label>
-        <select id="classification" name="classification" required>
-          <option value="">Choose...</option>
-          {% for key, label in classes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
-        </select></div>
-    </div>
-    <label for="why">Why</label>
-    <textarea id="why" name="comment" maxlength="1000" required></textarea>
-    <p><button type="submit">Review and close</button></p>
+  <form class="compact" method="post" action="{{ url_for('close_incident', incident_id=incident.id) }}">{{ csrf() }}
+    <select id="classification" name="classification" aria-label="Classification" required>
+      <option value="">Classification...</option>
+      {% for key, label in classes.items() %}<option value="{{ key }}">{{ label }}</option>{% endfor %}
+    </select>
+    <textarea id="why" name="comment" maxlength="1000" rows="1" placeholder="Why?" aria-label="Why" required></textarea>
+    <button type="submit">Review and close</button>
   </form>
 </div>
 {% endif %}

@@ -253,3 +253,22 @@ form.filters button { padding: 9px 18px; border-radius: 16px; font-size: 12px; }
 tr.denied td { background: rgba(255, 77, 77, .12); }
 .small { font-size: 13px; }
 .pager { display: flex; gap: 22px; margin: 12px 0 0; }
+
+/* ---------- incident timeline ---------- */
+ol.timeline { list-style: none; margin: 0 0 4px; padding: 0 0 0 16px; border-left: 3px solid var(--slate-2); }
+ol.timeline li { position: relative; margin: 0 0 8px; padding: 4px 0 4px 10px; }
+ol.timeline li::before { content: ""; position: absolute; left: -25px; top: 11px; width: 11px; height: 11px; border-radius: 50%; background: var(--teal); border: 2px solid var(--panel); }
+ol.timeline .meta { color: var(--teal); font-size: 14px; }
+ol.timeline p { margin: 2px 0 0; white-space: pre-wrap; word-break: break-word; }
+ol.timeline .ev-alert::before { background: var(--red); }
+ol.timeline .ev-ack::before { background: var(--cream); }
+ol.timeline .ev-closed::before { background: var(--orange); }
+ol.timeline .ev-ai { background: var(--readout); border-radius: 10px; padding-right: 12px; }
+ol.timeline .ev-ai::before { background: var(--cream); }
+
+/* ---------- status strip ---------- */
+.statusbar { position: relative; z-index: 1; background: var(--deep); border-bottom: 2px solid var(--slate); font-size: 13px; color: var(--muted); }
+.statusbar .bar { max-width: 1180px; margin: 0 auto; padding: 6px 20px; display: flex; gap: 6px 22px; flex-wrap: wrap; }
+.statusbar b { font: 600 10px/1 var(--display); letter-spacing: .1em; text-transform: uppercase; color: var(--teal); margin-right: 6px; }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+.dot.st-up { background: var(--teal); } .dot.st-down { background: var(--red); } .dot.st-checking { background: var(--orange); }

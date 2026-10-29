@@ -8,9 +8,10 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-{% if mock %}<div class="banner">MOCK MODE: demo data only, nothing real is read or changed</div>{% endif %}
+<div class="sky" aria-hidden="true"><i class="s1"></i><i class="s2"></i><i class="s3"></i><i class="s4"></i><i class="s5"></i></div>
+{% if mock %}<div class="banner">Mock mode: demo data only, nothing real is read or changed</div>{% endif %}
 <header class="top"><div class="bar">
-  <a class="brand" href="{{ url_for('dashboard') if user else url_for('login') }}">SOC Console</a>
+  <a class="brand" href="{{ url_for('dashboard') if user else url_for('login') }}"><span class="logo-planet" aria-hidden="true"></span>SOC Console</a>
   {% if user %}
   <nav>
     <a href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}class="on"{% endif %}>Dashboard</a>
@@ -23,7 +24,8 @@
     {% if user.tier >= P.ADMIN %}<a href="{{ url_for('audit_view') }}" {% if request.endpoint == 'audit_view' %}class="on"{% endif %}>Audit</a>{% endif %}
   </nav>
   <div class="who">
-    <span>{{ user.username }} <span class="badge">{{ user.tier_name }}</span></span>
+    <span class="rank" title="Access tier: {{ user.tier_name }}">{{ ranks[user.tier] }}</span>
+    <span>{{ user.username }}</span>
     <form method="post" action="{{ url_for('logout') }}" class="inline">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="link" type="submit">Sign out</button>
@@ -31,6 +33,14 @@
   </div>
   {% endif %}
 </div></header>
+{% if user and status %}
+<div class="statusbar" role="status" aria-label="System status"><div class="bar">
+  <span><b>Mode</b> {{ status.mode }}</span>
+  <span><b>Splunk</b> <i class="dot st-{{ status.splunk }}" aria-hidden="true"></i>{{ {'up': 'reachable', 'down': 'unreachable', 'off': 'not configured', 'checking': 'checking'}[status.splunk] }}</span>
+  <span><b>AI</b> {{ status.ai }}</span>
+  <span><b>Last alert</b> {{ status.last_alert|when if status.last_alert else 'none yet' }}</span>
+</div></div>
+{% endif %}
 <main>
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% for category, message in messages %}<div class="flash {{ category }}">{{ message }}</div>{% endfor %}

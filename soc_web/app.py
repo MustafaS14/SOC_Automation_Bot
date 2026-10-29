@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Any
 from urllib.parse import urlsplit
@@ -30,6 +30,7 @@ from .answers import parse_answer, pretty
 from .config import WebSettings
 from .runtime import Backends
 from .security import Throttle, add_headers, check_csrf, csrf_token
+from .status import StatusProbe
 from .users import UserStore
 
 log = logging.getLogger("soc_web")
@@ -73,6 +74,32 @@ def host_name(host: str) -> str:
     return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
 
 
+def build_timeline(inc: Any, acks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Everything that happened to an incident, oldest first: the alert, each comment (told apart by who or what wrote
+    it), and acknowledgements, which the store does not keep and so come from the audit log."""
+    events: list[dict[str, Any]] = [
+        {"when": inc.created, "kind": "alert", "label": "Alert raised", "who": "", "text": ""}
+    ]
+    for c in inc.comments:
+        if c.author == "triage-assistant":
+            kind, label = "ai", "AI triage note"
+        elif c.body.startswith("Closed as "):
+            kind, label = "closed", "Closed"
+        elif c.body.startswith("IP enrichment "):
+            kind, label = "enrich", "IP enrichment"
+        else:
+            kind, label = "comment", "Comment"
+        events.append({"when": c.created, "kind": kind, "label": label, "who": c.author, "text": c.body})
+    for a in acks:
+        try:
+            when = datetime.fromisoformat(str(a.get("ts")))
+        except ValueError:
+            continue
+        events.append({"when": when, "kind": "ack", "label": "Acknowledged", "who": str(a.get("actor", "")), "text": ""})
+    events.sort(key=lambda e: e["when"] or datetime.min.replace(tzinfo=timezone.utc))
+    return events
+
+
 def audit_row(e: dict[str, Any]) -> dict[str, Any]:
     """One audit entry prepared for display: its channel, the incident it concerns, and the details worth reading."""
     target = str(e.get("target", ""))
@@ -108,6 +135,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     add_headers(app)
     store, runner = backends.store, backends.runner
     login_throttle = Throttle(limit=20, period=300)
+    probe = StatusProbe(backends)
 
     # ---- helpers ------------------------------------------------------------------------------------------
 
@@ -183,6 +211,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     @app.context_processor
     def inject() -> dict[str, Any]:
         return {"user": g.get("user"), "P": Permission, "mock": backends.settings.mock_mode,
+                "status": probe.snapshot() if g.get("user") else None,
                 "level_label": LEVEL_LABELS, "ranks": RANKS}
 
     @app.template_filter("when")
@@ -277,7 +306,10 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         except NotFoundError:
             abort(404)
         audit("incident.show", f"#{inc.id}")
-        return render_template("incident.html", incident=inc, classes=CLOSE_LABELS)
+        acks, _ = search(backends.settings.audit_log_path, action="incident.ack", target=f"#{inc.id}",
+                         outcome="success", limit=20)
+        return render_template("incident.html", incident=inc, classes=CLOSE_LABELS,
+                               timeline=build_timeline(inc, acks))
 
     def back(incident_id: int):
         return redirect(url_for("incident", incident_id=incident_id))

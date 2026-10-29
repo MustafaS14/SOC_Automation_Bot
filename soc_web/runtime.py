@@ -38,6 +38,16 @@ class AsyncRunner:
         future.add_done_callback(lambda f: f.exception() and log.warning("Background task failed: %s", f.exception()))
 
     def close(self) -> None:
+        async def cancel_pending() -> None:
+            for task in asyncio.all_tasks():
+                if task is not asyncio.current_task():
+                    task.cancel()
+            await asyncio.sleep(0)
+
+        try:
+            asyncio.run_coroutine_threadsafe(cancel_pending(), self._loop).result(2)
+        except Exception:  # shutting down anyway
+            pass
         self._loop.call_soon_threadsafe(self._loop.stop)
         self._thread.join(timeout=5)
         self._loop.close()

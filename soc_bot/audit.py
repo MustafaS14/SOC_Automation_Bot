@@ -107,6 +107,7 @@ def search(
     action: str = "",
     outcome: str = "",
     channel: str = "",
+    target: str = "",
     since: str = "",
     until: str = "",
     denied_only: bool = False,
@@ -115,7 +116,7 @@ def search(
 ) -> tuple[list[dict[str, Any]], int]:
     """(one page of matching entries newest first, the number of matches). since/until are YYYY-MM-DD, inclusive.
 
-    actor and action match as case-insensitive substrings, outcome and channel exactly. Unreadable lines are skipped.
+    actor and action match as case-insensitive substrings; outcome, channel and target exactly. Unreadable lines are skipped.
     """
     try:
         lines = Path(path).read_text(encoding="utf-8").splitlines()
@@ -136,6 +137,7 @@ def search(
             (actor and actor not in str(e.get("actor", "")).lower())
             or (action and action not in str(e.get("action", "")).lower())
             or (outcome and e.get("outcome") != outcome)
+            or (target and e.get("target") != target)
             or (channel and entry_channel(e) != channel)
             or (since and day < since)
             or (until and day > until)
