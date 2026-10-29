@@ -7,6 +7,7 @@ the same audit entries (with channel "web"). Data from alerts and from Splunk is
 from __future__ import annotations
 
 import logging
+import re
 from datetime import timedelta
 from functools import wraps
 from typing import Any
@@ -19,7 +20,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from soc_bot import hunts
 from soc_bot.ai import split_plain_words
 from soc_bot.ai.tools import LEVEL_LABELS
-from soc_bot.audit import read_recent
+from soc_bot.audit import entry_channel, entry_denied, search
 from soc_bot.clients import APIError, NotConfiguredError, NotFoundError
 from soc_bot.rbac import Permission
 from soc_bot.store import CLASSIFICATIONS, SEVERITIES
@@ -36,6 +37,11 @@ log = logging.getLogger("soc_web")
 STATUSES = ("open", "new", "active", "closed", "all")
 CLOSE_LABELS = {"true_positive": "True positive", "false_positive": "False positive", "benign": "Benign"}
 MAX_HUNT_ROWS = 100
+AUDIT_PAGE = 50
+AUDIT_CHANNELS = ("web", "discord", "cli")
+AUDIT_OUTCOMES = ("success", "denied", "error", "failure")
+_BASE_KEYS = {"ts", "actor", "actor_id", "action", "target", "outcome", "channel", "ip"}
+_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 HANDLED = (ValueError, APIError, NotConfiguredError, TimeoutError)
 
 # Space-crew names for the tiers. Only the label changes; what each tier may do does not.
@@ -65,6 +71,23 @@ def host_name(host: str) -> str:
     if host.startswith("["):
         return host[1:].split("]", 1)[0]
     return host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+
+
+def audit_row(e: dict[str, Any]) -> dict[str, Any]:
+    """One audit entry prepared for display: its channel, the incident it concerns, and the details worth reading."""
+    target = str(e.get("target", ""))
+    incident = None
+    if str(e.get("action", "")).startswith("incident.") and re.fullmatch(r"#\d+", target):
+        incident = int(target[1:])
+    elif isinstance(e.get("incident"), int):
+        incident = e["incident"]
+    return {
+        "ts": str(e.get("ts", ""))[:19].replace("T", " "), "actor": e.get("actor", ""), "action": e.get("action", ""),
+        "target": target, "outcome": e.get("outcome", ""), "channel": entry_channel(e), "ip": e.get("ip", ""),
+        "denied": entry_denied(e), "incident": incident,
+        "details": [(k, str(v)[:160]) for k, v in e.items() if k not in _BASE_KEYS and v not in (None, "")],
+        "is_ai": e.get("action") == "ai.ask",
+    }
 
 
 def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
@@ -409,8 +432,29 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     @app.get("/audit")
     @needs(Permission.ADMIN)
     def audit_view():
-        entries = list(reversed(read_recent(backends.settings.audit_log_path, 100)))
-        audit("audit.view", "web", count=len(entries))
-        return render_template("audit.html", entries=entries)
+        args = request.args
+        filters = {
+            "actor": args.get("actor", "").strip()[:64],
+            "action": args.get("action", "").strip()[:64],
+            "outcome": args.get("outcome", "") if args.get("outcome", "") in AUDIT_OUTCOMES else "",
+            "channel": args.get("channel", "") if args.get("channel", "") in AUDIT_CHANNELS else "",
+            "since": args.get("since", "") if _DATE.match(args.get("since", "")) else "",
+            "until": args.get("until", "") if _DATE.match(args.get("until", "")) else "",
+        }
+        denied_only = args.get("denied") == "1"
+        try:
+            page = max(1, min(int(args.get("page", "1")), 10_000))
+        except ValueError:
+            page = 1
+        found, total = search(backends.settings.audit_log_path, denied_only=denied_only,
+                              offset=(page - 1) * AUDIT_PAGE, limit=AUDIT_PAGE, **filters)
+        rows = [audit_row(e) for e in found]
+        shown = {k: v for k, v in {**filters, "denied": "1" if denied_only else ""}.items() if v}
+        audit("audit.view", "web", count=len(rows), page=page, **{f"filter_{k}": v for k, v in shown.items()})
+        return render_template(
+            "audit.html", rows=rows, total=total, page=page, pages=max(1, -(-total // AUDIT_PAGE)), shown=shown,
+            filters=filters, denied_only=denied_only, channels=AUDIT_CHANNELS, outcomes=AUDIT_OUTCOMES,
+            forwarding=backends.hec is not None,
+        )
 
     return app

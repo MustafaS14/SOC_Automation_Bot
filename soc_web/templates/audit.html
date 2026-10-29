@@ -3,23 +3,50 @@
 {% block content %}
 <h1>Audit log</h1>
 <div class="panel">
-  <p class="muted">The newest {{ entries|length }} entries from the bot and the console, newest first.</p>
+  <form class="filters" method="get" action="{{ url_for('audit_view') }}">
+    <div><label for="actor">Actor</label><input type="text" id="actor" name="actor" value="{{ filters.actor }}" maxlength="64"></div>
+    <div><label for="action">Action</label><input type="text" id="action" name="action" value="{{ filters.action }}" maxlength="64" placeholder="e.g. incident.close"></div>
+    <div><label for="outcome">Outcome</label>
+      <select id="outcome" name="outcome"><option value="">Any</option>
+        {% for o in outcomes %}<option value="{{ o }}"{{ ' selected' if filters.outcome == o }}>{{ o }}</option>{% endfor %}
+      </select></div>
+    <div><label for="channel">Channel</label>
+      <select id="channel" name="channel"><option value="">Any</option>
+        {% for c in channels %}<option value="{{ c }}"{{ ' selected' if filters.channel == c }}>{{ c }}</option>{% endfor %}
+      </select></div>
+    <div><label for="since">From</label><input type="date" id="since" name="since" value="{{ filters.since }}"></div>
+    <div><label for="until">To</label><input type="date" id="until" name="until" value="{{ filters.until }}"></div>
+    <div class="check"><input type="checkbox" id="denied" name="denied" value="1"{{ ' checked' if denied_only }}><label for="denied">Denied only</label></div>
+    <div class="go"><button type="submit">Filter</button>{% if shown %}<a href="{{ url_for('audit_view') }}">Clear</a>{% endif %}</div>
+  </form>
+</div>
+<div class="panel">
+  <p class="muted">{{ total }} matching {{ 'entry' if total == 1 else 'entries' }}, newest first, page {{ page }} of {{ pages }}.
+    {% if forwarding %}Every entry is also sent to Splunk, and <strong>the Splunk copy is the authoritative one</strong>, because this file can be edited by anyone with access to the server.
+    {% else %}Entries are <strong>not</strong> forwarded to Splunk (no HEC configured), so this file is the only copy and anyone with access to the server could change it.{% endif %}</p>
   <div class="table-wrap"><table>
-    <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Outcome</th><th>Where</th></tr></thead>
+    <thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Target</th><th>Outcome</th><th>Where</th><th>Details</th></tr></thead>
     <tbody>
-    {% for e in entries %}
-      <tr>
-        <td class="code">{{ (e.get('ts') or '')[:19]|replace('T', ' ') }}</td>
-        <td>{{ e.get('actor', '') }}</td>
-        <td class="code">{{ e.get('action', '') }}</td>
-        <td>{{ e.get('target', '') }}</td>
-        <td>{{ e.get('outcome', '') }}</td>
-        <td class="muted">{{ 'web' if e.get('channel') == 'web' else 'discord' }}</td>
+    {% for e in rows %}
+      <tr{% if e.denied %} class="denied"{% endif %}>
+        <td class="code">{{ e.ts }}</td>
+        <td>{{ e.actor }}{% if e.ip %}<div class="muted small">{{ e.ip }}</div>{% endif %}</td>
+        <td class="code">{{ e.action }}</td>
+        <td>{% if e.incident %}<a href="{{ url_for('incident', incident_id=e.incident) }}">#{{ e.incident }}</a>{% else %}{{ e.target }}{% endif %}{% if e.is_ai %} <span class="muted small">(asked at this level)</span>{% endif %}</td>
+        <td>{{ e.outcome }}{% if e.denied and e.outcome != 'denied' %} <span class="small">(something was refused)</span>{% endif %}</td>
+        <td class="muted">{{ e.channel }}</td>
+        <td class="small">{% for k, v in e.details %}<span class="muted">{{ k }}</span> {{ v }}{{ '; ' if not loop.last }}{% endfor %}</td>
       </tr>
     {% else %}
-      <tr><td colspan="6" class="muted">The audit log is empty.</td></tr>
+      <tr><td colspan="7" class="muted">{{ 'No entries match these filters.' if shown else 'The audit log is empty.' }}</td></tr>
     {% endfor %}
     </tbody>
   </table></div>
+  {% if pages > 1 %}
+  <p class="pager">
+    {% if page > 1 %}<a href="{{ url_for('audit_view', page=page - 1, **shown) }}">&laquo; Newer</a>{% endif %}
+    {% if page < pages %}<a href="{{ url_for('audit_view', page=page + 1, **shown) }}">Older &raquo;</a>{% endif %}
+  </p>
+  {% endif %}
 </div>
 {% endblock %}

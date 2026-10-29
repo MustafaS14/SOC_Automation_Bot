@@ -432,3 +432,86 @@ def test_forwarded_address_is_trusted_only_when_a_proxy_is_declared(stack):
     backends.audit_log.close()
     ips = [json.loads(line)["ip"] for line in open(backends.settings.audit_log_path, encoding="utf-8")]
     assert ips == ["127.0.0.1", "6.6.6.6"]
+
+
+def _seed_audit(backends, entries):
+    with open(backends.settings.audit_log_path, "a", encoding="utf-8") as f:
+        for e in entries:
+            f.write(json.dumps(e) + "\n")
+
+
+def _entry(i, **over):
+    e = {"ts": f"2026-03-{1 + i % 28:02d}T10:00:00+00:00", "actor": "alice", "actor_id": 1,
+         "action": "incident.show", "target": f"#{i}", "outcome": "success", "channel": "web", "ip": "127.0.0.1"}
+    return {**e, **over}
+
+
+def test_audit_page_is_paged_fifty_newest_first(stack):
+    app, backends, _ = stack
+    _seed_audit(backends, [_entry(i, actor=f"user{i:03d}") for i in range(120)])
+    client, _ = login(app, "admin")
+    first = client.get("/audit").get_data(as_text=True)
+    assert "user119" in first and "user075" in first and "user060" not in first and "user000" not in first
+    assert "page 1 of 3" in first and "Older" in first and "Newer" not in first
+    last = client.get("/audit?page=3").get_data(as_text=True)
+    assert "user000" in last and "Older" not in last and "Newer" in last
+
+
+@pytest.mark.parametrize("query, present, absent", [
+    ("actor=BOB", "bob-entry", "alice-entry"),
+    ("action=incident.close", "close-entry", "alice-entry"),
+    ("outcome=denied", "denied-entry", "alice-entry"),
+    ("channel=discord", "discord-entry", "alice-entry"),
+    ("since=2026-04-01", "april-entry", "alice-entry"),
+    ("until=2026-02-28", "feb-entry", "alice-entry"),
+    ("denied=1", "ai-refused", "alice-entry"),
+])
+def test_audit_filters(stack, query, present, absent):
+    app, backends, _ = stack
+    _seed_audit(backends, [
+        _entry(1, target="alice-entry"),
+        _entry(2, actor="bob", target="bob-entry"),
+        _entry(3, action="incident.close", target="close-entry"),
+        _entry(4, outcome="denied", target="denied-entry"),
+        _entry(5, channel=None, target="discord-entry"),
+        _entry(6, ts="2026-04-05T10:00:00+00:00", target="april-entry"),
+        _entry(7, ts="2026-02-05T10:00:00+00:00", target="feb-entry"),
+        _entry(8, action="ai.ask", denied=True, target="ai-refused"),
+    ])
+    client, _ = login(app, "admin")
+    html = client.get(f"/audit?{query}").get_data(as_text=True)
+    assert present in html and absent not in html
+
+
+def test_audit_rows_link_to_incidents_and_explain_ai_questions(stack):
+    app, backends, _ = stack
+    _seed_audit(backends, [
+        _entry(1, action="incident.close", target="#7", classification="Benign"),
+        _entry(2, action="enrich.ip", target="203.0.113.9", incident=4),
+        _entry(3, action="ai.ask", target="Analyst", tools="search_incidents,get_incident", denied=True, calls=2),
+    ])
+    html = login(app, "admin")[0].get("/audit").get_data(as_text=True)
+    assert 'href="/incidents/7"' in html and 'href="/incidents/4"' in html
+    assert "asked at this level" in html and "search_incidents,get_incident" in html
+    assert "something was refused" in html
+
+
+def test_audit_filter_input_is_escaped_and_bad_values_ignored(stack):
+    app, _, _ = stack
+    client, _ = login(app, "admin")
+    resp = client.get('/audit?actor="><script>alert(1)</script>&since=not-a-date&page=abc&outcome=bogus')
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 200 and "<script>alert(1)" not in html
+    assert "page 1 of" in html
+
+
+def test_audit_page_says_which_copy_is_authoritative(stack):
+    app, _, _ = stack
+    html = login(app, "admin")[0].get("/audit").get_data(as_text=True)
+    assert "not</strong> forwarded to Splunk" in html
+
+
+def test_audit_page_is_closed_to_other_tiers(stack):
+    app, _, _ = stack
+    for tier in ("viewer", "read", "triage"):
+        assert login(app, tier)[0].get("/audit").status_code == 403

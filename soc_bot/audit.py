@@ -89,3 +89,60 @@ def read_recent(path: str | Path, limit: int = 20) -> list[dict[str, Any]]:
         if isinstance(obj, dict):
             entries.append(obj)
     return entries[-max(1, limit) :]
+
+
+def entry_channel(entry: dict[str, Any]) -> str:
+    """Where an entry came from. Entries written before the console existed carry no channel: they are Discord's."""
+    return str(entry.get("channel") or "discord")
+
+
+def entry_denied(entry: dict[str, Any]) -> bool:
+    return entry.get("outcome") == "denied" or bool(entry.get("denied"))
+
+
+def search(
+    path: str | Path,
+    *,
+    actor: str = "",
+    action: str = "",
+    outcome: str = "",
+    channel: str = "",
+    since: str = "",
+    until: str = "",
+    denied_only: bool = False,
+    offset: int = 0,
+    limit: int = 50,
+) -> tuple[list[dict[str, Any]], int]:
+    """(one page of matching entries newest first, the number of matches). since/until are YYYY-MM-DD, inclusive.
+
+    actor and action match as case-insensitive substrings, outcome and channel exactly. Unreadable lines are skipped.
+    """
+    try:
+        lines = Path(path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return [], 0
+    actor, action = actor.strip().lower(), action.strip().lower()
+    page: list[dict[str, Any]] = []
+    total = 0
+    for line in reversed(lines):
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(e, dict):
+            continue
+        day = str(e.get("ts", ""))[:10]
+        if (
+            (actor and actor not in str(e.get("actor", "")).lower())
+            or (action and action not in str(e.get("action", "")).lower())
+            or (outcome and e.get("outcome") != outcome)
+            or (channel and entry_channel(e) != channel)
+            or (since and day < since)
+            or (until and day > until)
+            or (denied_only and not entry_denied(e))
+        ):
+            continue
+        if offset <= total < offset + limit:
+            page.append(e)
+        total += 1
+    return page, total
