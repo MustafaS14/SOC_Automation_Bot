@@ -1,5 +1,11 @@
-## SOC lab: log every executed command on the victim.
+## SOC lab: log the commands that people (and attackers acting through a login session) run on the victim.
 ## Install: sudo cp soc.rules /etc/audit/rules.d/soc.rules && sudo augenrules --load
 ## Verify:  sudo auditctl -l
 ## Search:  sudo ausearch -k exec_cmd -i --start recent
--a always,exit -F arch=b64 -S execve -k exec_cmd
+##
+## auid is the "audit user id": the ID of the person who originally logged in, even after sudo.
+## auid>=1000 means a real login session. auid=4294967295 means "no login session" (system services),
+## which are excluded to cut about 99 percent of the noise.
+## Trade-off: a command started by a service with no login session is NOT recorded by this rule.
+## The Caldera agent is started from a login session, so it is still seen (auid=1000, uid=0).
+-a always,exit -F arch=b64 -S execve -F auid>=1000 -F auid!=4294967295 -k exec_cmd
