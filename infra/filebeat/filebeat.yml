@@ -1,0 +1,19 @@
+# Filebeat on the victim (soc-victim, 192.168.56.20): reads two log files and sends them to Logstash.
+# Install:  sudo cp filebeat.yml /etc/filebeat/filebeat.yml
+# Check:    sudo filebeat test config && sudo filebeat test output
+# Start:    sudo systemctl enable --now filebeat
+filebeat.inputs:
+  - type: filestream
+    id: soc-audit
+    paths:
+      - /var/log/audit/audit.log      # what auditd records (every command run in a login session)
+
+  - type: filestream
+    id: soc-auth
+    paths:
+      - /var/log/auth.log             # logins, sudo, SSH
+
+output.logstash:
+  hosts: ["192.168.56.10:5044"]       # Logstash on soc-siem
+
+logging.level: warning
