@@ -297,3 +297,108 @@ def test_login_attempts_are_throttled_per_address(stack):
     codes = [client.post("/login", data={"username": "ghost", "password": "x" * 14, "csrf_token": token(page)}).status_code
              for _ in range(25)]
     assert 429 in codes and codes[0] == 401
+
+
+# ---- space-UI theme: ranks, threat level, self-hosted fonts, nothing inline ----
+
+@pytest.mark.parametrize(
+    "open_by_severity,expected",
+    [
+        ({}, ("clear", 1)),
+        ({"Informational": 2}, ("guarded", 2)),
+        ({"Low": 1}, ("guarded", 2)),
+        ({"Low": 1, "Medium": 1}, ("elevated", 3)),
+        ({"Medium": 1, "High": 1, "Low": 4}, ("critical", 4)),
+        ({"High": 0, "Medium": 0}, ("clear", 1)),  # zero counts do not raise the level
+    ],
+)
+def test_threat_level_follows_the_worst_open_severity(open_by_severity, expected):
+    from soc_web.app import threat_level
+
+    level, steps, reason = threat_level(open_by_severity)
+    assert (level, steps) == expected and reason
+
+
+def test_rank_names_cover_every_tier_and_show_in_the_header(stack):
+    from soc_bot.rbac import Permission
+    from soc_web.app import RANKS
+
+    assert set(RANKS) == set(Permission)
+    for tier, rank in (("viewer", "Cadet"), ("read", "Scout"), ("triage", "Pilot"), ("admin", "Commander")):
+        client, _ = login(stack[0], tier)
+        assert rank in client.get("/").get_data(as_text=True)
+
+
+def test_dashboard_shows_threat_level_and_clears_when_nothing_is_open(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "read")
+    html = client.get("/").get_data(as_text=True)
+    assert "CRITICAL" in html and "High-severity incidents are open" in html  # the seeded High incident
+    for incident_id in (1, 2, 3, 4):
+        backends.runner.run(backends.store.close(incident_id, "benign", "test", "t"))
+    html = client.get("/").get_data(as_text=True)
+    assert "All clear" in html and ">CLEAR<" in html  # the heading is uppercased by CSS
+
+
+def test_fonts_are_self_hosted_and_allowed_by_the_csp(stack):
+    app, _, _ = stack
+    client = app.test_client()
+    for name in ("Orbitron.ttf", "Exo2.ttf"):
+        resp = client.get(f"/static/fonts/{name}")
+        assert resp.status_code == 200 and resp.data[:4] == b"\x00\x01\x00\x00"
+    csp = client.get("/login").headers["Content-Security-Policy"]
+    assert "font-src 'self'" in csp
+    assert "http" not in csp and "script-src" not in csp  # still nothing from outside, still no scripts
+
+
+def test_no_page_uses_inline_styles_or_scripts(stack):
+    app, _, _ = stack
+    client, _ = login(app, "admin")
+    for path in ("/", "/incidents", "/incidents/2", "/hunt", "/enrich", "/ask", "/audit", "/nope"):
+        html = client.get(path).get_data(as_text=True)
+        assert " style=" not in html and "<script" not in html and " onclick=" not in html, path
+    assert " style=" not in app.test_client().get("/login").get_data(as_text=True)
+
+
+def test_ask_shows_a_plain_words_box_separate_from_the_technical_answer(stack):
+    app, _, _ = stack
+    client, _ = login(app, "viewer")
+    html = post(client, "/ask", "/ask", question="summarize incident 1").get_data(as_text=True)
+    answer_part, _, plain_part = html.partition('class="panel plain"')
+    assert "In plain words" in plain_part and "monitoring system" in plain_part
+    assert "Not checked" in answer_part                       # the technical answer is in its own box
+    assert "In plain words:" not in answer_part               # the marker itself is not left in it
+
+
+def test_ask_shows_no_plain_words_box_for_a_refusal(stack):
+    app, _, _ = stack
+    client, _ = login(app, "viewer")
+    html = post(client, "/ask", "/ask", question="What's the weather tomorrow?").get_data(as_text=True)
+    assert "I can only help with this SOC" in html and 'class="panel plain"' not in html
+
+
+def test_logout_revokes_a_copied_session_cookie(stack):
+    app, _, _ = stack
+    client, _ = login(app, "triage")
+    cookie = client.get_cookie("soc_session").value
+    post(client, "/logout", "/")
+    thief = app.test_client()
+    thief.set_cookie("soc_session", cookie)
+    assert thief.get("/").status_code == 302
+
+
+def test_password_change_signs_out_existing_sessions(stack):
+    app, _, users = stack
+    client, _ = login(app, "triage")
+    users.set_password("triage", "a brand new password")
+    assert client.get("/").status_code == 302
+    _, resp = login(app, "triage", "a brand new password")
+    assert resp.status_code == 302
+
+
+def test_logout_leaves_other_users_signed_in(stack):
+    app, _, _ = stack
+    a, _ = login(app, "triage")
+    b, _ = login(app, "read")
+    post(a, "/logout", "/")
+    assert b.get("/").status_code == 200

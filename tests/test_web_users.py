@@ -128,3 +128,21 @@ def test_settings_can_skip_discord_requirements():
     with pytest.raises(ConfigError, match="WEBHOOK_SECRET"):
         Settings(**{**real, "discord_token": "t", "allowed_channel_ids": frozenset({1}),
                     "read_role_ids": frozenset({1})}).validate()
+
+
+def test_old_database_without_session_version_is_upgraded(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "old.db")
+    db = sqlite3.connect(path)
+    db.execute("CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, "
+               "password_hash TEXT NOT NULL, tier INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1, "
+               "failed_attempts INTEGER NOT NULL DEFAULT 0, locked_until TEXT, created TEXT NOT NULL, last_login TEXT)")
+    db.execute("INSERT INTO users (username, password_hash, tier, created) VALUES ('old', 'x', 1, 'now')")
+    db.commit()
+    db.close()
+    from soc_web.users import UserStore
+
+    store = UserStore(path)
+    assert store.list()[0].session_version == 0
+    store.close()

@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS users (
     failed_attempts INTEGER NOT NULL DEFAULT 0,
     locked_until TEXT,
     created TEXT NOT NULL,
-    last_login TEXT
+    last_login TEXT,
+    session_version INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -47,6 +48,7 @@ class User:
     username: str
     tier: Permission
     active: bool = True
+    session_version: int = 0
 
     @property
     def tier_name(self) -> str:
@@ -58,7 +60,7 @@ def _now() -> datetime:
 
 
 def _row_user(row: sqlite3.Row) -> User:
-    return User(row["id"], row["username"], Permission(row["tier"]), bool(row["active"]))
+    return User(row["id"], row["username"], Permission(row["tier"]), bool(row["active"]), row["session_version"])
 
 
 def check_password_strength(password: str) -> None:
@@ -71,6 +73,10 @@ class UserStore:
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
+        columns = {r["name"] for r in self._db.execute("PRAGMA table_info(users)")}
+        if "session_version" not in columns:  # a database made before sessions could be revoked
+            with self._db:
+                self._db.execute("ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0")
         self._lock = threading.Lock()
         self._max_failed = max_failed
         self._lockout = timedelta(minutes=lockout_minutes)
@@ -148,7 +154,7 @@ class UserStore:
 
     def set_password(self, username: str, password: str) -> None:
         check_password_strength(password)
-        self._update(username, "password_hash = ?, failed_attempts = 0, locked_until = NULL",
+        self._update(username, "password_hash = ?, failed_attempts = 0, locked_until = NULL, session_version = session_version + 1",
                      generate_password_hash(password))
 
     def set_tier(self, username: str, tier: str) -> None:
@@ -157,4 +163,9 @@ class UserStore:
         self._update(username, "tier = ?", int(TIERS[tier]))
 
     def set_active(self, username: str, active: bool) -> None:
-        self._update(username, "active = ?", int(active))
+        self._update(username, "active = ?, session_version = session_version + 1", int(active))
+
+    def revoke_sessions(self, user_id: int) -> None:
+        """Every cookie issued so far for this user stops working (the cookie carries the version it was issued at)."""
+        with self._lock, self._db:
+            self._db.execute("UPDATE users SET session_version = session_version + 1 WHERE id = ?", (user_id,))

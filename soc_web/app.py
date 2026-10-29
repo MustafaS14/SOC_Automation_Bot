@@ -16,6 +16,7 @@ from flask import Flask, abort, flash, g, redirect, render_template, request, se
 from werkzeug.exceptions import HTTPException
 
 from soc_bot import hunts
+from soc_bot.ai import split_plain_words
 from soc_bot.ai.tools import LEVEL_LABELS
 from soc_bot.audit import read_recent
 from soc_bot.clients import APIError, NotConfiguredError, NotFoundError
@@ -23,6 +24,7 @@ from soc_bot.rbac import Permission
 from soc_bot.store import CLASSIFICATIONS, SEVERITIES
 from soc_bot.validators import ValidationError, parse_incident_ref, parse_ip
 
+from .answers import parse_answer, pretty
 from .config import WebSettings
 from .runtime import Backends
 from .security import Throttle, add_headers, check_csrf, csrf_token
@@ -34,6 +36,26 @@ STATUSES = ("open", "new", "active", "closed", "all")
 CLOSE_LABELS = {"true_positive": "True positive", "false_positive": "False positive", "benign": "Benign"}
 MAX_HUNT_ROWS = 100
 HANDLED = (ValueError, APIError, NotConfiguredError, TimeoutError)
+
+# Space-crew names for the tiers. Only the label changes; what each tier may do does not.
+RANKS = {
+    Permission.VIEWER: "Cadet", Permission.READ: "Scout", Permission.TRIAGE: "Pilot",
+    Permission.RESPONSE: "Guardian", Permission.ADMIN: "Commander",
+}
+# Difficulty stars per severity, for the incident list.
+STARS = {"High": 4, "Medium": 3, "Low": 2, "Informational": 1}
+
+
+def threat_level(open_by_severity: dict[str, int]) -> tuple[str, int, str]:
+    """(level, bar segments lit out of 4, one-line reason), from the worst severity that is still open."""
+    for level, steps, severities, reason in (
+        ("critical", 4, ("High",), "High-severity incidents are open"),
+        ("elevated", 3, ("Medium",), "Medium-severity incidents are open"),
+        ("guarded", 2, ("Low", "Informational"), "Only low or informational incidents are open"),
+    ):
+        if any(open_by_severity.get(s, 0) for s in severities):
+            return level, steps, reason
+    return "clear", 1, "Nothing is open"
 
 
 def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
@@ -109,19 +131,20 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         if uid is not None:
             # Read from the database on every request, so a disabled account or a changed tier applies at once.
             user = users.get(uid)
-            if user and user.active:
+            if user and user.active and session.get("sv") == user.session_version:
                 g.user = user
             else:
                 session.clear()
         if request.method == "POST":
             check_csrf()
 
-    app.jinja_env.globals["csrf_token"] = csrf_token  # a global, so imported macros can call it too
+    # Globals, not context variables, so imported macros can use them too.
+    app.jinja_env.globals.update(csrf_token=csrf_token, stars=STARS, pretty=pretty)
 
     @app.context_processor
     def inject() -> dict[str, Any]:
         return {"user": g.get("user"), "P": Permission, "mock": backends.settings.mock_mode,
-                "level_label": LEVEL_LABELS}
+                "level_label": LEVEL_LABELS, "ranks": RANKS}
 
     @app.template_filter("when")
     def when(dt: Any) -> str:
@@ -163,6 +186,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
                 return render_template("login.html"), 401
             session.clear()  # a fresh session on every login, so an old cookie cannot be reused
             session["uid"] = user.id
+            session["sv"] = user.session_version
             session.permanent = True
             record(user.username, user.id, "auth.login", user.username, "success")
             return redirect(url_for("dashboard"))
@@ -174,6 +198,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     def logout():
         if g.user:
             audit("auth.logout", g.user.username)
+            users.revoke_sessions(g.user.id)  # a copied cookie dies with the logout, not at its expiry
         session.clear()
         return redirect(url_for("login"))
 
@@ -185,8 +210,9 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         counts = call(store.counts())
         recent = call(store.list("open", None, 8)) if g.user.tier >= Permission.READ else []
         open_total = sum(n for status, n in counts["status"].items() if status != "Closed")
+        level, steps, reason = threat_level(counts["open_by_severity"])
         return render_template("dashboard.html", counts=counts, open_total=open_total, recent=recent,
-                               severities=SEVERITIES)
+                               severities=SEVERITIES, threat=level, threat_steps=steps, threat_reason=reason)
 
     @app.get("/incidents")
     @needs(Permission.READ)
@@ -357,7 +383,10 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
                           calls=answer.calls, question=question[:200])
                 except HANDLED as exc:
                     flash(explain(exc), "error")
-        return render_template("ask.html", question=question, answer=answer, enabled=backends.assistant is not None)
+        technical, plain = split_plain_words(answer.text) if answer else ("", None)
+        blocks = parse_answer(technical).blocks if answer else []
+        return render_template("ask.html", question=question, answer=answer, blocks=blocks, plain=plain,
+                               enabled=backends.assistant is not None)
 
     # ---- audit log ----------------------------------------------------------------------------------------
 
