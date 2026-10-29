@@ -183,6 +183,18 @@ def hunt_results(label: str, window: str, rows: list[dict[str, Any]]) -> discord
     return embed
 
 
+def ai_answer(question: str, text: str) -> discord.Embed:
+    embed = discord.Embed(description=md(text, 3500), color=discord.Color.blurple())
+    embed.set_footer(text=_t(" ".join(question.split()), 100))
+    return embed
+
+
+def ai_note(incident_id: int, text: str) -> discord.Embed:
+    embed = discord.Embed(title=f"Triage note for #{incident_id}", description=md(text, 3500), color=discord.Color.blurple())
+    embed.set_footer(text="Suggestion only. A person decides and acts.")
+    return embed
+
+
 def notice(text: str, color: discord.Color | None = None) -> discord.Embed:
     return discord.Embed(description=text, color=color or discord.Color.light_grey())
 
