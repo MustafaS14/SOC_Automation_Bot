@@ -90,6 +90,16 @@ class Settings:
     virustotal_api_key: str | None = field(default=None, repr=False)
     audit_log_path: str = "audit.jsonl"
     log_level: str = "INFO"
+    viewer_role_ids: frozenset[int] = frozenset()
+    admin_role_ids: frozenset[int] = frozenset()
+    ai_backend: str = "off"  # "off", "mock" (needs SOC_BOT_MOCK) or "claude_code"
+    ai_command: str = "claude"
+    ai_model: str = ""
+    ai_timeout: float = 90.0
+    ai_user_questions_per_hour: int = 12
+    ai_auto_notes_per_hour: int = 6
+    ai_daily_calls: int = 150
+    ai_max_rows: int = 20
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -124,6 +134,16 @@ class Settings:
             virustotal_api_key=os.getenv("VIRUSTOTAL_API_KEY", "").strip() or None,
             audit_log_path=os.getenv("AUDIT_LOG_PATH", "audit.jsonl"),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+            viewer_role_ids=_id_set("RBAC_VIEWER_ROLE_IDS"),
+            admin_role_ids=_id_set("RBAC_ADMIN_ROLE_IDS"),
+            ai_backend=(os.getenv("AI_BACKEND", "").strip().lower() or ("mock" if _bool(os.getenv("SOC_BOT_MOCK")) else "off")),
+            ai_command=os.getenv("AI_COMMAND", "claude").strip() or "claude",
+            ai_model=os.getenv("AI_MODEL", "").strip(),
+            ai_timeout=float(_int_default("AI_TIMEOUT_SECONDS", 90)),
+            ai_user_questions_per_hour=_int_default("AI_USER_QUESTIONS_PER_HOUR", 12),
+            ai_auto_notes_per_hour=_int_default("AI_AUTO_NOTES_PER_HOUR", 6),
+            ai_daily_calls=_int_default("AI_DAILY_CALLS", 150),
+            ai_max_rows=_int_default("AI_MAX_ROWS", 20),
         )
         settings.validate()
         return settings
@@ -168,11 +188,22 @@ class Settings:
             raise ConfigError("WEBHOOK_PORT must be between 1 and 65535.")
         if any("/" in h or ":" in h or " " in h for h in self.webhook_link_hosts):
             raise ConfigError("WEBHOOK_LINK_HOSTS must be bare hostnames, without scheme, port or path.")
-        if not (self.read_role_ids or self.triage_role_ids or self.response_role_ids):
+        if not (
+            self.read_role_ids or self.triage_role_ids or self.response_role_ids
+            or self.viewer_role_ids or self.admin_role_ids
+        ):
             raise ConfigError(
                 "No RBAC roles configured. Set RBAC_READ_ROLE_IDS / RBAC_TRIAGE_ROLE_IDS / "
-                "RBAC_RESPONSE_ROLE_IDS so the bot is not open to everyone."
+                "RBAC_RESPONSE_ROLE_IDS (or the VIEWER / ADMIN variants) so the bot is not open to everyone."
             )
+        if self.ai_backend not in {"off", "mock", "claude_code"}:
+            raise ConfigError("AI_BACKEND must be off, mock or claude_code.")
+        if self.ai_backend == "mock" and not self.mock_mode:
+            raise ConfigError("AI_BACKEND=mock is only allowed together with SOC_BOT_MOCK=true.")
+        if self.ai_timeout < 5:
+            raise ConfigError("AI_TIMEOUT_SECONDS must be at least 5.")
+        if min(self.ai_user_questions_per_hour, self.ai_auto_notes_per_hour, self.ai_daily_calls, self.ai_max_rows) < 1:
+            raise ConfigError("The AI_* limits must each be at least 1.")
         if not self.allowed_channel_ids:
             raise ConfigError(
                 "No channels configured. Set ALLOWED_CHANNEL_IDS so commands are not accepted everywhere."
