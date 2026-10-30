@@ -178,3 +178,22 @@ def test_ai_defaults_are_off(monkeypatch):
     assert Settings.from_env().ai_backend == "off"
     monkeypatch.setenv("SOC_BOT_MOCK", "true")
     assert Settings.from_env().ai_backend == "mock"
+
+
+def test_unresolved_1password_reference_is_refused(monkeypatch):
+    from soc_bot.config import reject_unresolved_references
+
+    monkeypatch.setenv("DISCORD_TOKEN", "op://SOC-Lab/discord/token")
+    monkeypatch.setenv("SPLUNK_TOKEN", "  op://SOC-Lab/splunk/token")
+    with pytest.raises(ConfigError) as exc:
+        reject_unresolved_references()
+    message = str(exc.value)
+    assert "DISCORD_TOKEN" in message and "SPLUNK_TOKEN" in message and "op run" in message
+    assert "SOC-Lab" not in message  # names the variables, never echoes the references
+
+
+def test_real_values_pass_the_reference_check(monkeypatch):
+    from soc_bot.config import reject_unresolved_references
+
+    monkeypatch.setenv("DISCORD_TOKEN", "a-real-looking-token")
+    reject_unresolved_references()  # no error

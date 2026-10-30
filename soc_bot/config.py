@@ -12,6 +12,20 @@ class ConfigError(RuntimeError):
     pass
 
 
+def reject_unresolved_references() -> None:
+    """Stop when a setting still holds a 1Password reference (op://vault/item/field) instead of the secret.
+
+    `op run --env-file=.env -- <command>` swaps the references for the real values before the program starts. Started
+    any other way, the reference text itself would be used as the token, and every call with it would fail confusingly.
+    """
+    names = sorted(name for name, value in os.environ.items() if value.strip().startswith("op://"))
+    if names:
+        raise ConfigError(
+            f"{', '.join(names)} still hold 1Password references (op://...) instead of values. Start the program "
+            "through the 1Password CLI so they are filled in, e.g.: op run --env-file=.env -- python -m soc_bot"
+        )
+
+
 def _bool(value: str | None) -> bool:
     return (value or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -104,6 +118,7 @@ class Settings:
     @classmethod
     def from_env(cls, *, require_discord: bool = True) -> Settings:
         load_dotenv()
+        reject_unresolved_references()
         settings = cls(
             discord_token=os.getenv("DISCORD_TOKEN", "").strip(),
             guild_id=_int_or_none("DISCORD_GUILD_ID"),

@@ -186,3 +186,22 @@ def test_cli_account_changes_are_audited(tmp_path, monkeypatch):
                                               "account.disable", "account.enable"]
     assert all(e["channel"] == "cli" and e["actor"].startswith("cli:") for e in entries)
     assert "a long enough password" not in json.dumps(entries)
+
+
+def test_console_default_port_avoids_splunk_and_caldera(monkeypatch):
+    from soc_web.config import WebSettings
+
+    monkeypatch.setenv("SOC_WEB_SECRET_KEY", "k" * 40)
+    monkeypatch.delenv("SOC_WEB_PORT", raising=False)
+    assert WebSettings.from_env().port == 8080 and WebSettings.from_env().port not in (8000, 8088, 8089, 8888, 5044)
+
+
+def test_console_refuses_to_start_on_unresolved_reference(monkeypatch):
+    import pytest as _pytest
+
+    from soc_bot.config import ConfigError
+    from soc_web.config import WebSettings
+
+    monkeypatch.setenv("SOC_WEB_SECRET_KEY", "op://SOC-Lab/soc-console/secret-key")
+    with _pytest.raises(ConfigError, match="1Password"):
+        WebSettings.from_env()

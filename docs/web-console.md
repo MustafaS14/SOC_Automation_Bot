@@ -10,7 +10,7 @@ The console is a web page where the SOC team can see security alerts ("incidents
 - **What you can do depends on your level.** A *viewer* sees only totals and can ask the assistant for summaries. An *analyst* (read) can look at incidents, hostnames and addresses, run hunts and check an IP's reputation. *Triage* can also acknowledge, comment and close. *Admin* can also read the audit log, the record of who did what.
 - **It cannot isolate a computer.** That stays in the Discord bot.
 - **Everything people do is written to an audit log.**
-- **Keep it on your own machine** (`http://127.0.0.1:8000`). It does not encrypt traffic itself, so using it from another computer needs a TLS proxy in front (see below).
+- **Keep it on your own machine** (`http://127.0.0.1:8080`). It does not encrypt traffic itself, so using it from another computer needs a TLS proxy in front (see below).
 
 The rest of this page is for the person setting it up.
 
@@ -46,7 +46,7 @@ Pages a user's tier does not allow return 403, and the nav only shows what the a
 pip install -r requirements.txt
 python -c "import secrets; print(secrets.token_hex(32))"   # put the result in SOC_WEB_SECRET_KEY in .env
 python -m soc_web user add alice --tier triage              # asks for the password twice
-python -m soc_web                                           # http://127.0.0.1:8000
+python -m soc_web                                           # http://127.0.0.1:8080
 ```
 
 The console reads the same `.env` as the bot, but needs no Discord token, role IDs, channel IDs or `WEBHOOK_SECRET`. Point `DB_PATH` at the bot's incident database to see its incidents; alerts arrive through the bot's webhook, not the console.
@@ -57,8 +57,8 @@ Settings (all optional except the secret key; see `.env.example`):
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `SOC_WEB_SECRET_KEY` | none | Signs sessions. 32+ characters; the server refuses to start without it (mock mode makes a temporary one) |
-| `SOC_WEB_HOST`, `SOC_WEB_PORT` | `127.0.0.1`, `8000` | Where it listens |
+| `SOC_WEB_SECRET_KEY` | none | Signs sessions (can be a 1Password reference, see [secrets.md](secrets.md)). 32+ characters; the server refuses to start without it (mock mode makes a temporary one) |
+| `SOC_WEB_HOST`, `SOC_WEB_PORT` | `127.0.0.1`, `8080` | Where it listens. On the lab VM, ports 8000, 8088, 8089 and 8888 (Splunk Web, HEC, Splunk API, Caldera) and 5044 (Logstash) are taken. To serve the VM's lab network, bind to its address (`SOC_WEB_HOST=192.168.56.10`) and set `SOC_WEB_ALLOWED_HOSTS` to that address, with a TLS proxy in front |
 | `SOC_WEB_ALLOWED_HOSTS` | loopback + the bind address | Host names it answers to; any other `Host` header gets 400. Listening on `0.0.0.0` with no list accepts any, and logs a warning |
 | `SOC_WEB_TRUSTED_PROXIES` | `0` | Number of TLS proxies in front. Above 0, `X-Forwarded-*` from them is believed |
 | `SOC_WEB_SECURE_COOKIES` | `true` | Set `false` only for a plain-HTTP lab address |

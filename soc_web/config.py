@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
-from soc_bot.config import ConfigError, _bool, _int_default
+from soc_bot.config import ConfigError, _bool, _int_default, reject_unresolved_references
 
 
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
@@ -27,7 +27,7 @@ def default_hosts(bind_host: str, configured: str) -> tuple[str, ...]:
 class WebSettings:
     secret_key: str = field(repr=False)
     host: str = "127.0.0.1"
-    port: int = 8000
+    port: int = 8080
     users_db: str = "web_users.db"
     session_hours: int = 8
     # Cookies are marked Secure by default, so a plain-HTTP lab address needs SOC_WEB_SECURE_COOKIES=false.
@@ -43,6 +43,7 @@ class WebSettings:
     @classmethod
     def from_env(cls, *, mock_mode: bool = False) -> WebSettings:
         load_dotenv()
+        reject_unresolved_references()
         key = os.getenv("SOC_WEB_SECRET_KEY", "").strip()
         if not key and mock_mode:
             key = secrets.token_hex(32)  # demo only: sessions end when the process restarts
@@ -50,7 +51,7 @@ class WebSettings:
         settings = cls(
             secret_key=key,
             host=host,
-            port=_int_default("SOC_WEB_PORT", 8000),
+            port=_int_default("SOC_WEB_PORT", 8080),
             users_db=os.getenv("SOC_WEB_USERS_DB", "web_users.db").strip(),
             session_hours=_int_default("SOC_WEB_SESSION_HOURS", 8),
             secure_cookies=_bool(os.getenv("SOC_WEB_SECURE_COOKIES", "true")),
