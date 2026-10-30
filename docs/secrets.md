@@ -8,7 +8,7 @@ Instead of pasting a token into `.env`, you store it in a 1Password vault and wr
 
 ## Set up
 
-1. Install the [1Password CLI](https://developer.1password.com/docs/cli/) (`op`) and sign in (the desktop app can unlock it with biometrics).
+1. Install the [1Password CLI](https://developer.1password.com/docs/cli/) (`op`; on Windows `winget install AgileBits.1Password.CLI`) and sign in (the desktop app can unlock it with biometrics).
 2. Make a vault (for example `SOC-Lab`) and one item per secret, with the secret in a field.
 3. In `.env`, replace each value with a reference in the form `op://<vault>/<item>/<field>`:
 
