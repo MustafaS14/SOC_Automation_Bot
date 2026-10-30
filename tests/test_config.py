@@ -197,3 +197,55 @@ def test_real_values_pass_the_reference_check(monkeypatch):
 
     monkeypatch.setenv("DISCORD_TOKEN", "a-real-looking-token")
     reject_unresolved_references()  # no error
+
+
+def test_secret_reads_the_environment_first(monkeypatch, tmp_path):
+    from soc_bot.config import secret
+
+    (tmp_path / "discord_token").write_text("from-the-file\n")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+    monkeypatch.setenv("DISCORD_TOKEN", " from-the-environment ")
+    assert secret("DISCORD_TOKEN") == "from-the-environment"
+
+
+def test_secret_falls_back_to_a_systemd_credential_and_stays_out_of_the_environment(monkeypatch, tmp_path):
+    import os
+
+    from soc_bot.config import secret
+
+    (tmp_path / "discord_token").write_text("from-the-file\n")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+    monkeypatch.delenv("DISCORD_TOKEN", raising=False)
+    assert secret("DISCORD_TOKEN") == "from-the-file"
+    assert "DISCORD_TOKEN" not in os.environ
+
+
+def test_secret_is_empty_when_nothing_provides_it(monkeypatch, tmp_path):
+    from soc_bot.config import secret
+
+    monkeypatch.delenv("SPLUNK_TOKEN", raising=False)
+    monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
+    assert secret("SPLUNK_TOKEN") == ""
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))  # directory without the file
+    assert secret("SPLUNK_TOKEN") == ""
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path / "missing"))
+    assert secret("SPLUNK_TOKEN") == ""
+
+
+def test_secret_never_reads_outside_the_credentials_directory(monkeypatch, tmp_path):
+    from soc_bot.config import secret
+
+    (tmp_path / "outside").write_text("stolen")
+    inner = tmp_path / "creds"
+    inner.mkdir()
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(inner))
+    assert secret("../OUTSIDE") == "" and secret("sub/x") == ""
+
+
+def test_settings_use_credentials_for_every_secret(monkeypatch, tmp_path):
+    from soc_web.config import WebSettings
+
+    (tmp_path / "soc_web_secret_key").write_text("k" * 40)
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+    monkeypatch.delenv("SOC_WEB_SECRET_KEY", raising=False)
+    assert WebSettings.from_env().secret_key == "k" * 40

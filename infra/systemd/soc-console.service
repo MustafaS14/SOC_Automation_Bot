@@ -1,0 +1,29 @@
+# Sample unit for the web console. Placeholders: the user, the paths and the bind address. See README.md here.
+[Unit]
+Description=SOC web console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=soc
+Group=soc
+WorkingDirectory=/opt/soc-bot
+# Non-secret settings, including SOC_WEB_HOST=192.168.56.10, SOC_WEB_PORT=8080, SOC_WEB_ALLOWED_HOSTS=192.168.56.10
+# and DB_PATH / AUDIT_LOG_PATH / SOC_WEB_USERS_DB under /var/lib/soc (the same incident database and audit log as the bot).
+EnvironmentFile=/etc/soc/soc.env
+LoadCredential=soc_web_secret_key:/etc/soc/credentials/soc_web_secret_key
+LoadCredential=splunk_token:/etc/soc/credentials/splunk_token
+LoadCredential=splunk_hec_token:/etc/soc/credentials/splunk_hec_token
+LoadCredential=abuseipdb_api_key:/etc/soc/credentials/abuseipdb_api_key
+LoadCredential=virustotal_api_key:/etc/soc/credentials/virustotal_api_key
+ExecStart=/opt/soc-bot/.venv/bin/python -m soc_web
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/soc
+
+[Install]
+WantedBy=multi-user.target

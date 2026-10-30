@@ -44,4 +44,7 @@ Both programs refuse to start and name the variables that still hold a reference
 - The VS Code 1Password extension can spot secrets typed into files and offer to move them into a vault.
 - `SOC_BOT_MOCK=true` needs no secrets at all, so demos do not need 1Password.
 - This does not change how the console's own user passwords are stored: those are scrypt hashes in `web_users.db`, and nobody, including an admin, can read them back.
-- Not covered: running on the Linux VM. There, use the same `op run`, or a service-account token, or systemd credentials; pick one that does not leave secrets in a world-readable file.
+
+## On the Linux VM: systemd credentials
+
+`op run` is for the Windows development machine. On the VM, each secret is a root-only file under `/etc/soc/credentials/`, and the service unit lists it with `LoadCredential=`. systemd gives the service a private copy in `$CREDENTIALS_DIRECTORY`. The programs read a secret from the environment first (so `op run` and a plain environment variable still work) and fall back to that file, named after the setting in lower case (`discord_token` for `DISCORD_TOKEN`). The secret is never put in the process environment or the unit file, so `systemctl show` and a process listing do not reveal it. Sample units and the `chown` / `chmod` commands: [infra/systemd/](../infra/systemd/README.md).
