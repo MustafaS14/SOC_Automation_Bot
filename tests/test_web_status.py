@@ -18,7 +18,7 @@ class FakeSplunk:
 
 
 def settle(backends, probe):
-    for _ in range(100):
+    for _ in range(400):
         if not probe._running:
             return
         backends.runner.run(asyncio.sleep(0.02))
@@ -30,7 +30,7 @@ def test_reports_splunk_up_down_and_not_configured(stack):
     probe = StatusProbe(backends)
     assert probe.snapshot()["splunk"] == "off"
     for fail, expected in ((False, "up"), (True, "down")):
-        backends.splunk = FakeSplunk(fail=fail)
+        backends.splunk = FakeSplunk(fail=fail, delay=0.3)
         probe = StatusProbe(backends)
         assert probe.snapshot()["splunk"] == "checking"  # never waits for the probe
         settle(backends, probe)
@@ -73,3 +73,15 @@ def test_strip_shows_mode_ai_and_is_for_signed_in_users_only(stack):
     assert "<b>Mode</b> mock" in html and "<b>AI</b> mock" in html
     backends.runner.run(asyncio.sleep(0.7))  # let the mock Splunk probe finish
     assert "203.0." not in html.split('role="status"')[1].split("</div>")[0]
+
+
+def test_strip_shows_real_values_on_every_page(stack):
+    """A page that passes its own `status` (the incident filter) must not blank the strip."""
+    import re
+
+    app, _, _ = stack
+    client, _ = login(app, "admin")
+    for path in ("/", "/incidents", "/incidents?status=closed", "/incidents/1", "/hunt", "/enrich", "/ask", "/audit"):
+        html = client.get(path).get_data(as_text=True)
+        strip = re.search(r'role="status".*?</div></div>', html, re.S).group(0)
+        assert "<b>Mode</b> mock" in strip and "<b>AI</b> mock" in strip, path

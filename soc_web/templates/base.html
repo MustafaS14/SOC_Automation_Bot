@@ -33,12 +33,12 @@
   </div>
   {% endif %}
 </div></header>
-{% if user and status %}
+{% if user and sysstatus %}
 <div class="statusbar" role="status" aria-label="System status"><div class="bar">
-  <span><b>Mode</b> {{ status.mode }}</span>
-  <span><b>Splunk</b> <i class="dot st-{{ status.splunk }}" aria-hidden="true"></i>{{ {'up': 'reachable', 'down': 'unreachable', 'off': 'not configured', 'checking': 'checking'}[status.splunk] }}</span>
-  <span><b>AI</b> {{ status.ai }}</span>
-  <span><b>Last alert</b> {{ status.last_alert|when if status.last_alert else 'none yet' }}</span>
+  <span><b>Mode</b> {{ sysstatus.mode }}</span>
+  <span><b>Splunk</b> <i class="dot st-{{ sysstatus.splunk }}" aria-hidden="true"></i>{{ {'up': 'reachable', 'down': 'unreachable', 'off': 'not configured', 'checking': 'checking'}[sysstatus.splunk] }}</span>
+  <span><b>AI</b> {{ sysstatus.ai }}</span>
+  <span><b>Last alert</b> {{ sysstatus.last_alert|when if sysstatus.last_alert else 'none yet' }}</span>
 </div></div>
 {% endif %}
 <main>

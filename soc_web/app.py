@@ -239,7 +239,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     @app.context_processor
     def inject() -> dict[str, Any]:
         return {"user": g.get("user"), "P": Permission, "mock": backends.settings.mock_mode,
-                "status": probe.snapshot() if g.get("user") else None,
+                "sysstatus": probe.snapshot() if g.get("user") else None,
                 "level_label": LEVEL_LABELS, "ranks": RANKS}
 
     @app.template_filter("when")
