@@ -334,12 +334,38 @@ Result: the `linux` index held 213 audit events and 965 auth events (1,178 in to
 
 Snapshots taken at this point: `soc-siem` and `SOC-Victim-Ubuntu`, both named `pipeline tuned`.
 
-## 13. Next
+## 13. The AI assistant, the web console and the secrets plan (2026-10-29 to 2026-10-30)
 
-- Start `SOC-Attacker`, run a fresh Caldera *Discovery* operation (group `red`, adversary Discovery, planner atomic, obfuscator plain-text) and look at what reaches Splunk.
-- Write the first SPL detection for it (commands such as `whoami`, `id`, `uname`, `ps`, `hostname` run by a login session as root), labelled with MITRE ATT&CK techniques (T1087.001, T1057, T1033, T1082), then a Splunk alert that calls the bot's webhook. The built-in Splunk webhook cannot add the secret header the bot expects, so a small custom alert action or a relay is needed.
-- On the victim, create the `responder` user from [`infra/responder/`](../infra/responder/): install the scripts and the sudoers entry, and restrict the SSH key with a forced command.
-- Run the bot in real mode, send a test alert with `curl`, then a real Caldera run; test isolation from a snapshot first.
-- Add an AI triage layer to the bot: short summaries of incidents and an `/ask` command, with read-only tools only, log content treated as untrusted, every model call logged. See [roadmap.md](roadmap.md).
-- Housekeeping: delete old intermediate snapshots to keep the disk chains short.
-- Further ideas are in [roadmap.md](roadmap.md).
+**In simple words.** While the lab was resting, the software around it grew. The Discord bot got a helper that can explain incidents in plain language, a web page was built for watching the lab, and a plan was made for keeping passwords and keys out of files. None of this changes what the lab records; it changes what an analyst can do with it.
+
+- **AI triage assistant (merged to `main`).** A helper that answers questions about incidents (`/ask`) and writes a short note on each new alert. It can only read: it has no way to isolate a machine, close an incident or change anything. Each person's *clearance level* (Viewer, Analyst, Responder, Admin) decides which lookups it is given, so a Viewer asking for raw commands gets "That's outside your clearance level." in code, not by asking the AI politely. Off-topic questions get a fixed refusal. It is **off by default**; the mock version used for tests and demos answers by simple rules and does not explain anything in depth. The real version relays through Claude Code on the SIEM VM, and it must not be switched on until Anthropic's terms for always-on use on a personal plan have been checked. Design: [ai-triage-design.md](ai-triage-design.md).
+- **Tests.** On Windows the suite gave 316 passed and 3 skipped. The three skipped tests use a Linux shell script as a stand-in for the real tool, so they only run on Linux.
+- **Web console (branch `web-app`, not yet merged).** A themed web page with a dashboard, incident list and detail, hunts, the Ask page and an audit log, behind accounts with the same clearance levels as the bot. It has no isolate button and no connection to the VMs. Sessions end on logout or a password change, audit entries hide anything that looks like a key or token, and every page works without scripts. The branch test suite passed (504 passed, 3 skipped). It has only been run on demo data so far.
+- **Secrets.** On the Windows laptop the plan is a password manager (1Password): `.env` holds pointers such as `op://SOC-Lab/discord/token` and the app starts through `op run`, so the real value is never stored in a file. The bot and console refuse to start if a pointer was not replaced. On `soc-siem` the plan is *systemd credentials*, with one root-only file per secret. Neither has been tried with a real vault item or real systemd yet.
+- **Ports.** Web console 8080 (not 8000, which Splunk Web uses), bot webhook 8765, Caldera 8888, Splunk 8000, 8088 and 8089, Logstash 5044.
+
+## 14. The first real attack run and first detections (2026-10-30)
+
+**In simple words.** We turned the attacker on, let it run a few reconnaissance commands on the victim, and checked that Splunk saw them. Then we wrote the first two "tripwires" (detections). One works and was proven; the other is written but not proven yet.
+
+1. **Starting the attacker.** The first start failed with a generic VirtualBox error. It started on a later try after memory was freed (see [troubleshooting.md](troubleshooting.md)). The login name on all three VMs is `mus`, found in the PowerShell history.
+2. **Caldera.** The server started in `tmux` and listened on port 8888. A second attempt to start it printed "address already in use" errors, which only means the first copy was already running. Warnings about the `builder` plugin, Windows payload tools and a few missing abilities are harmless here.
+3. **The agent.** The Sandcat command from Caldera was run on the victim. The agent is named `splunkd` on purpose (it imitates Splunk's own name) and showed `Beacon (HTTP): ALIVE`.
+4. **A clock problem.** The SIEM had been resumed from a saved state and its clock was a day behind, so new events looked like they were from the future and the "last 15 minutes" search found nothing. Searching a wider window (`earliest=-2d latest=+2d`) showed the events were there. After `sudo timedatectl set-ntp true` the clock matched (12:04 UTC on 30 October). Do this after every resume.
+5. **What Splunk recorded.** The agent being downloaded and started (`curl`, `chmod +x`, `./splunkd -server http://192.168.56.30:8888 -group red -v`), then the operation's commands: `whoami`, `cut -d:` (reading the account list), `grep`, `ps aux` and `grep sshd`. Login-banner scripts (`tr`, `cut`) are background noise. Caldera runs its commands through `sh -c '...'`, so the real command can sit in field `a2`, not `a0`.
+6. **Detection 1, several discovery commands in a short time** (MITRE T1033, T1082, T1057, T1087.001). Written to read the real command from either field. It found no result yet because only two different commands (`whoami`, `ps`) fell in one ten-minute window and the rule needs three. Not proven.
+7. **Detection 2, a program called `./splunkd` started from a home directory** (MITRE T1036.004, masquerading). It found exactly one event, the agent start, and extracts the attacker's address `192.168.56.30` from the command. **Proven.**
+8. **The alert was not saved.** Setting it up needed a throttle field and an action, then Splunk said the connection may have been lost: the SIEM VM had crashed (VirtualBox *Guru Meditation*, shown in French as *Méditation profonde*). The alert has to be recreated after the VM is restarted. The cause of the crash has not been investigated.
+
+All detections are listed in [detections.md](detections.md).
+
+## 15. Next
+
+- Restart `soc-siem` after the crash, wait until Splunk is `healthy`, fix the clock, and look at `VBox.log` for the cause.
+- Recreate the `./splunkd` alert (every 5 minutes, last 15 minutes, throttled by `host` for 30 minutes), then prove detection 1 with a full Discovery run.
+- Write a small custom Splunk alert action that posts the first result row to the bot's webhook with the `X-Webhook-Secret` header (the built-in webhook cannot add headers), with the secret read from a root-only file and never stored in the repo.
+- Create the `responder` user on the victim from [`infra/responder/`](../infra/responder/); run the bot in real mode; send a test alert with `curl`, then a real Caldera run; test isolation from a snapshot first.
+- Try the `op run` setup with a real 1Password item and the systemd credentials on `soc-siem`.
+- Review and merge the `web-app` branch.
+- Check Anthropic's terms for always-on Claude Code use before switching on the real AI backend, and decide whether the repository is public or private (some pages still say private).
+- Housekeeping: delete old intermediate snapshots to keep the disk chains short. Further ideas are in [roadmap.md](roadmap.md).

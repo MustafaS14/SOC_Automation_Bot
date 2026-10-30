@@ -64,7 +64,7 @@ The host-only network is isolated from the real LAN, so the attack simulation ca
 | Splunk in Docker on `soc-siem` | ✅ | Healthy; web UI `:8000`, HEC `:8088` (HTTPS), REST `:8089`. Indexes `linux` and `soc_audit`; HEC token allows both. Compose file in `infra/siem/` |
 | Logstash on `soc-siem` | ✅ | Beats input `:5044`, labels and filters events, sets the real event time, sends to Splunk HEC. Pipeline in `infra/siem/logstash/pipeline/soc.conf` |
 | Filebeat on `soc-victim` | ✅ | Ships `/var/log/audit/audit.log` and `/var/log/auth.log` to Logstash. Config in `infra/filebeat/filebeat.yml`. Verified: a command typed on the victim is searchable in Splunk within seconds with the correct time |
-| Splunk detections (SPL) | ⏳ | Next: first detection for the Discovery scenario, then alerts via webhook to the bot |
+| Splunk detections (SPL) | 🔧 | Two detections written (see `detections.md`): the `./splunkd` masquerading rule is proven; the discovery-burst rule still needs a full Discovery run. Alert save and webhook action are next |
 | Discord bot | 🔧 | Migrated to Splunk webhook, SQLite store, `/hunt` and SSH isolation (see `bot-refactor-plan.md`); not yet run against live Splunk or the victim VM |
 
 ## Design decisions
