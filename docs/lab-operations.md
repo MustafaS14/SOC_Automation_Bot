@@ -67,3 +67,24 @@ A snapshot is a saved state of a VM that you can return to. Take one before anyt
 - If the attacker or victim becomes slow or freezes, lower it to 1 or 2 CPUs and check the laptop is plugged in. `soc-siem` is the opposite: it needs **4 CPUs** (2 caused freezes).
 - You do not need every VM for every task: for attack tests only the attacker and victim are needed; the SIEM is needed once logs flow into Splunk.
 - After `soc-siem` boots, Splunk starts by itself (`restart: unless-stopped`). Check with `docker ps` in `~/siem`: it should say `healthy` after 10 to 15 minutes from a cold boot; Logstash starts after Splunk is healthy. The web UI is at `http://192.168.56.10:8000`. Use *Save the machine state* or `sudo poweroff` so the Splunk data is written cleanly. On the victim, auditd and Filebeat start by themselves; check Filebeat with `sudo systemctl status filebeat`. A quick end-to-end test: run `whoami` on the victim, then search `index=linux sourcetype=linux:audit earliest=-5m type=EXECVE | table _time a0 a1` in Splunk.
+
+## After resuming a saved VM
+
+- **Fix the clock first.** A VM resumed from a saved state keeps the old time until it re-syncs, and Splunk then stamps and searches events wrongly. On `soc-siem` run `sudo timedatectl set-ntp true`, `sudo systemctl restart systemd-timesyncd`, then `timedatectl` and check *System clock synchronized: yes*. Compare `date` with the victim.
+- **Do not start Caldera twice.** If `tmux ls` shows a `caldera` session, attach to it (`tmux attach -t caldera`) instead of running `python3 server.py` again.
+- **Login name.** All three VMs use the account `mus` for SSH. Passwords are never written in the repository.
+- **A VM that shows *Méditation profonde* (Guru Meditation) has crashed.** Power it off, start it again and wait for Splunk to be `healthy`. See [troubleshooting.md](troubleshooting.md).
+
+## Ports used in the lab
+
+| Port | Used by | Machine |
+|---|---|---|
+| 22 | SSH | all VMs |
+| 5044 | Logstash (Filebeat sends logs here) | `soc-siem` |
+| 8000 | Splunk Web | `soc-siem` |
+| 8088 | Splunk HEC (Logstash sends logs here) | `soc-siem` |
+| 8089 | Splunk REST API (hunts, AI lookups) | `soc-siem` |
+| 8765 | Bot webhook (Splunk alerts arrive here) | where the bot runs |
+| 8080 | Web console | where the console runs |
+| 8888 | Caldera web interface | `soc-attacker` |
+| 7010, 7011, 7012 | Caldera agent contact ports | `soc-attacker` |
