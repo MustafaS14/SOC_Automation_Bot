@@ -38,6 +38,12 @@ The assistant's per-tool clearance is shared code with the bot. The page-level t
 
 **How answers are shown.** On the Ask page the assistant's answer is laid out as a titled card of labelled rows (severity as a badge, "none" instead of `n/a`), a table when there are several rows (hunt results, incident lists), and a separate block for Confidence and Not checked. Free-form text from a real model stays as paragraphs. Below it, a box called **In plain words** shows 2 or 3 non-technical sentences. The assistant's prompt asks for that part after "Not checked:", and never on a refusal, so refusals stay word for word. The parsing lives in `soc_web/answers.py`. The prompt change is in `soc_bot/ai/prompt.py`, so Discord answers carry the same "In plain words:" paragraph, as plain text.
 
+![Incident page with its timeline](screenshots/incident.png)
+
+![The audit log with filters](screenshots/audit.png)
+
+![A refusal on the Ask page](screenshots/ask-refused.png)
+
 Pages a user's tier does not allow return 403, and the nav only shows what the account can open ([screenshot](screenshots/viewer-refused.png)).
 
 ## Run it
