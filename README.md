@@ -13,7 +13,7 @@ Part of a fully local SOC lab (no cloud): Caldera attack, victim logs, Splunk, t
 | Attacker VM with MITRE Caldera, victim VM with Sandcat agent and auditd | Built; first Discovery run recorded in [attack-scenarios/01-discovery.md](attack-scenarios/01-discovery.md) |
 | Bot (webhook, SQLite store, /hunt, SSH isolation, RBAC, audit) | Built and unit-tested; reviewed in [docs/security-review.md](docs/security-review.md); not yet run against a live Splunk or a real isolation |
 | SIEM pipeline: Filebeat (victim), Logstash and Splunk in Docker (SIEM VM) | Working end to end: commands typed on the victim are searchable in Splunk within seconds, with the correct time; noise filtered (see [lab build log](docs/lab-build-log.md), sections 7 to 12) |
-| Splunk detections mapped to MITRE ATT&CK, webhook alerts | Next: first detection for the Discovery scenario |
+| Splunk detections mapped to MITRE ATT&CK, webhook alerts | In progress: two detections written, one proven (see `docs/detections.md`); alert and webhook action next |
 | Auto-enrichment playbook, dashboard, more attack scenarios | Ideas, after the pipeline works end to end |
 
 New to security? Read the [plain-language overview](docs/plain-language-overview.md) first.
