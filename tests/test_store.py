@@ -111,3 +111,20 @@ async def test_data_survives_reopen(tmp_path):
     second = IncidentStore(path)
     assert [i.rule for i in await second.list(status="all")] == ["persisted"]
     second.shutdown()
+
+
+async def test_list_orders_and_rejects_unknown_order():
+    import pytest
+
+    from soc_bot.store import IncidentStore
+
+    store = IncidentStore(":memory:")
+    for rule, sev in (("a", "Low"), ("b", "High"), ("c", "Medium"), ("d", "High")):
+        await store.create(rule=rule, severity=sev)
+    names = lambda rows: [i.rule for i in rows]  # noqa: E731
+    assert names(await store.list("all", None, 10, "newest")) == ["d", "c", "b", "a"]
+    assert names(await store.list("all", None, 10, "oldest")) == ["a", "b", "c", "d"]
+    assert names(await store.list("all", None, 10, "severity")) == ["d", "b", "c", "a"]
+    with pytest.raises(ValueError):
+        await store.list("all", None, 10, "id; DROP TABLE incidents")
+    store.shutdown()

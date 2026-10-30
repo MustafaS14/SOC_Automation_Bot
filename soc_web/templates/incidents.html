@@ -13,9 +13,14 @@
       <option value="">Any</option>
       {% for s in severities %}<option value="{{ s }}" {% if s == severity %}selected{% endif %}>{{ s }}</option>{% endfor %}
     </select></div>
+  <div><label for="order">Sort by</label>
+    <select id="order" name="order">
+      {% for key, label in orders.items() %}<option value="{{ key }}" {% if key == order %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select></div>
   <div><label for="limit">How many</label>
     <input type="number" id="limit" name="limit" min="1" max="50" value="{{ limit }}"></div>
   <button type="submit">Filter</button>
 </form>
-<div class="panel">{{ incident_table(incidents) }}</div>
+<div class="panel">{% if filtered %}{{ incident_table(incidents, 'No incidents match these filters. Try status All and severity Any.', url_for('incidents'), 'Clear the filters') }}
+  {% else %}{{ incident_table(incidents, 'No open incidents. New ones appear here when Splunk sends an alert to the bot.') }}{% endif %}</div>
 {% endblock %}

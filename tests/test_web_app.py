@@ -569,3 +569,45 @@ def test_refusals_get_their_own_panel(stack):
     assert 'class="panel refusal"' in off_topic and "Not something I can help with" in off_topic
     ok = post(client, "/ask", "/ask", question="How many incidents are open?").get_data(as_text=True)
     assert 'class="panel refusal"' not in ok and "<h2>Answer</h2>" in ok
+
+
+def _positions(html, *needles):
+    return [html.index(n) for n in needles]
+
+
+def test_incident_list_sorts_by_the_chosen_order(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "read")
+    rows = backends.runner.run(backends.store.list("all", None, 50))
+    ids = [i.id for i in rows]  # newest first
+    links = [f'href="/incidents/{i}"' for i in ids]
+    newest = client.get("/incidents?status=all&order=newest").get_data(as_text=True)
+    oldest = client.get("/incidents?status=all&order=oldest").get_data(as_text=True)
+    assert _positions(newest, *links) == sorted(_positions(newest, *links))
+    assert _positions(oldest, *links) == sorted(_positions(oldest, *links), reverse=True)
+
+    severity = client.get("/incidents?status=all&order=severity").get_data(as_text=True)
+    first_link = min(severity.index(link) for link in links)
+    first_id = next(i for i, link in zip(ids, links) if severity.index(link) == first_link)
+    assert next(i for i in rows if i.id == first_id).severity == "High"
+
+
+def test_unknown_sort_falls_back_and_is_audited_as_chosen(stack):
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    html = client.get("/incidents?order=%27%3BDROP%20TABLE").get_data(as_text=True)
+    assert 'value="newest" selected' in html
+
+
+def test_empty_incident_list_explains_what_to_do(stack):
+    app, backends, _ = stack
+
+    async def none(*args, **kwargs):
+        return []
+
+    backends.store.list = none
+    client, _ = login(app, "read")
+    html = client.get("/incidents").get_data(as_text=True)
+    assert "No open incidents. New ones appear here when Splunk sends an alert to the bot." in html
+    filtered = client.get("/incidents?status=closed&severity=High").get_data(as_text=True)
+    assert "No incidents match these filters" in filtered and "Clear the filters" in filtered

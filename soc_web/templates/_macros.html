@@ -12,7 +12,7 @@
 </div>
 {% endmacro %}
 
-{% macro incident_table(rows) %}
+{% macro incident_table(rows, empty='No incidents yet. They appear here when Splunk sends an alert to the bot.', link=none, link_text='') %}
 <div class="slots">
   {% for i in rows %}
     <a class="slot sev-{{ i.severity }}" href="{{ url_for('incident', incident_id=i.id) }}">
@@ -23,7 +23,7 @@
       <div class="tag">{{ sev(i.severity) }}</div>
     </a>
   {% else %}
-    <div class="slot empty">No incidents match.</div>
+    <div class="slot empty">{{ empty }}{% if link %} <a href="{{ link }}">{{ link_text }}</a>{% endif %}</div>
   {% endfor %}
 </div>
 {% endmacro %}
