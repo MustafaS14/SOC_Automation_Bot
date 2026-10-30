@@ -148,6 +148,56 @@ def _plain_words(tool: str, data: str) -> str:
     return "This is what the monitoring system currently knows. A person should check the details before acting."
 
 
+# Follow-ups ("explain that better") are scripted too: the mock only re-words the earlier answer it is shown in
+# <earlier_exchanges>, using fixed templates. It understands nothing; a real model does this properly.
+_FOLLOW_UP = re.compile(
+    r"\b(explain|simpler|simple terms|plain words|plain english|clearer|elaborate|more detail|tell me more"
+    r"|what does (?:that|this|it) mean|don'?t understand)\b"
+)
+_NEW_SUBJECT = ("audit", "who asked", "isolat", "incident", "how many", "count", "list", "recent", "latest", "show",
+                "command")
+_EXPLAIN_TAG = "(scripted mock explanation, not a language model) "
+_ACTION_WORDS = {
+    "auth.login": "signed in", "auth.logout": "signed out", "incident.list": "looked at the incident list",
+    "incident.show": "opened an incident", "incident.ack": "acknowledged an incident",
+    "incident.close": "closed an incident", "incident.comment": "added a comment", "ai.ask": "asked the assistant a question",
+    "hunt.run": "ran a search", "enrich.ip": "checked an address's reputation", "audit.view": "looked at the audit log",
+    "web.access": "was refused a page",
+}
+_EXPLAIN_BODY = {
+    "incident_counts": "The numbers are how many incidents are still open, split by how serious they are, and how many are new, being worked on or closed.",
+    "incident_summary": "The summary says which rule raised the alert, how serious it is rated and where it stands. A high rating means look at it first.",
+    "get_incident": "This is the full record of one alert: which rule fired, on which machine, and what has been noted so far.",
+    "list_incidents": "Each line is one alert: its number, the rule that fired and how serious it is rated.",
+    "run_hunt": "The search looked through recorded events from the machine. Each row is one event, with its time and what ran.",
+    "enrich_ip": "The address was checked against public reputation services, and the verdict sums up what they said.",
+}
+
+
+def _explain_audit(answer: str) -> tuple[str, str]:
+    actions = [a for a in re.findall(r"action=([\w.]+)", answer)]
+    actors = sorted(set(re.findall(r"actor=([\w.@-]+)", answer)))
+    if not actions:
+        return "This is the audit log, a record of what people did in the SOC tools.", "It is a diary of who did what, kept so actions can be checked later."
+    counts: dict[str, int] = {}
+    for a in actions:
+        counts[a] = counts.get(a, 0) + 1
+    parts = ", ".join(f"{n} time{'s' if n > 1 else ''} {_ACTION_WORDS.get(a, a)}" for a, n in counts.items())
+    who = " and ".join(actors) if actors else "someone"
+    body = f"Each line is one thing a person did in the SOC tools. Here {who} did the following: {parts}."
+    return body, "This is a diary of who used the system and what they did. Nothing in it says anything is wrong by itself."
+
+
+def _explain(tools: str, answer: str) -> str:
+    tool = tools.split(",")[-1] if tools else ""
+    if tool == "recent_audit":
+        body, plain = _explain_audit(answer)
+    else:
+        body = _EXPLAIN_BODY.get(tool, "That answer is the raw result of a lookup. Ask about one incident to dig into it.")
+        plain = _plain_words(tool, answer)
+    return f"{_EXPLAIN_TAG}{body}\nConfidence: low (mock assistant, no real model).\nNot checked: anything beyond the earlier answer.\n\n{PLAIN_MARKER} {plain}"
+
+
 _SOC_WORDS = (
     "incident", "alert", "host", "ip", "detect", "attack", "log", "command", "isolat", "splunk", "soc",
     "malware", "login", "ssh", "sudo", "audit", "hunt", "severity", "triage", "mitre", "discovery", "caldera",
@@ -176,6 +226,11 @@ class MockBackend:
                 f"\n\n{PLAIN_MARKER} {_plain_words(tool, data)}"
             )
 
+        if _FOLLOW_UP.search(question) and not any(w in question for w in _NEW_SUBJECT) and not re.search(r"\d", question):
+            earlier = re.findall(r'<exchange tools="([\w,]*)"><q>(.*?)</q><a>(.*?)</a></exchange>', prompt, re.S)
+            if earlier:
+                return _reply(_explain(earlier[-1][0], earlier[-1][2]))
+            return _reply("(mock) Ask me something about the SOC first, then I can explain the answer.")
         if any(w in question for w in _SECRET_WORDS):
             return _reply("I can't share credentials or configuration.")
         host = re.search(r"\b(soc-[a-z0-9-]+)\b", question)

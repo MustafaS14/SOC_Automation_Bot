@@ -284,3 +284,6 @@ ul.examples a:hover, ul.examples a:focus-visible { border-color: var(--teal); co
 .panel.refusal h2 { color: var(--orange); }
 .panel.refusal p { margin: 0 0 6px; font-size: 19px; color: var(--cream); }
 .panel.refusal p.muted { font-size: 15px; color: var(--muted); }
+
+.memory { margin: 0 0 16px; }
+.memory form.inline { margin-left: 6px; }

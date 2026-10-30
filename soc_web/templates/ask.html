@@ -11,6 +11,7 @@
     <p><button class="primary" type="submit">Ask</button></p>
   </form>
   <p class="muted">Read-only. You are asking at the <strong>{{ level_label[user.tier] }}</strong> level, so {% if user.tier < P.READ %}you get summaries without hostnames or IPs{% elif user.tier < P.RESPONSE %}you can see hosts, IPs and hunt results but not isolation previews or the audit log{% elif user.tier < P.ADMIN %}you can also preview what an isolation would do, but not see the audit log{% else %}you can ask about everything the assistant can see, including the audit log{% endif %}. It cannot change anything.</p>
+  <div class="muted memory">It remembers your last {{ memory.max_exchanges }} questions for {{ memory.ttl_minutes }} minutes, so you can follow up ("Explain that in simpler terms"). {% if remembered %}It is remembering {{ remembered }} now. <form method="post" action="{{ url_for('ask_forget') }}" class="inline">{{ csrf() }}<button class="link" type="submit">Forget them</button></form>{% else %}Nothing is remembered right now.{% endif %}</div>
   <h2>Try asking</h2>
   <ul class="examples">
     {% for e in examples %}<li><a href="{{ url_for('ask', q=e) }}">{{ e }}</a></li>{% endfor %}

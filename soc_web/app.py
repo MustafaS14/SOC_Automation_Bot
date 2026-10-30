@@ -31,6 +31,7 @@ from soc_bot.validators import ValidationError, parse_incident_ref, parse_ip
 from .answers import parse_answer, pretty
 from .config import WebSettings
 from .runtime import Backends
+from .memory import ConversationMemory
 from .security import Throttle, add_headers, check_csrf, csrf_token
 from .status import StatusProbe
 from .users import UserStore
@@ -118,6 +119,9 @@ EXAMPLES = {
 }
 
 
+FOLLOW_UP_EXAMPLE = "Explain that in simpler terms"
+
+
 def refusal_kind(text: str, denied: bool) -> str | None:
     """"clearance" or "off_topic" when the assistant declined to answer, else None."""
     stripped = text.strip()
@@ -164,6 +168,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     store, runner = backends.store, backends.runner
     login_throttle = Throttle(limit=20, period=300)
     probe = StatusProbe(backends)
+    memory = ConversationMemory()
 
     # ---- helpers ------------------------------------------------------------------------------------------
 
@@ -295,6 +300,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         if g.user:
             audit("auth.logout", g.user.username)
             users.revoke_sessions(g.user.id)  # a copied cookie dies with the logout, not at its expiry
+            memory.clear(g.user.id)
         session.clear()
         return redirect(url_for("login"))
 
@@ -479,19 +485,35 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
             if backends.assistant is None:
                 flash("The AI assistant is not enabled (AI_BACKEND).", "error")
             else:
+                history = memory.history(g.user.id, g.user.tier)
                 try:
-                    answer = call(backends.assistant.ask(question, g.user.tier, g.user.id),
+                    answer = call(backends.assistant.ask(question, g.user.tier, g.user.id, history=history),
                                   timeout=backends.settings.ai_timeout + 30)
                     audit("ai.ask", LEVEL_LABELS[g.user.tier], answer.outcome,
                           tools=",".join(answer.tools_used) or None, denied=True if answer.denied else None,
-                          calls=answer.calls, question=question[:200])
+                          calls=answer.calls, followup=len(history) or None, question=question[:200])
+                    # Only answers backed by a lookup are remembered: a follow-up explains the data, and an
+                    # explanation (or a "ask something first" reply) is not data to explain again.
+                    if (answer.outcome == "answered" and answer.tools_used and not answer.denied
+                            and not refusal_kind(answer.text, False)):
+                        memory.add(g.user.id, g.user.tier, question, split_plain_words(answer.text)[0],
+                                   ",".join(answer.tools_used))
                 except HANDLED as exc:
                     flash(explain(exc), "error")
         technical, plain = split_plain_words(answer.text) if answer else ("", None)
         blocks = parse_answer(technical).blocks if answer else []
+        remembered = memory.count(g.user.id, g.user.tier)
         return render_template("ask.html", question=question, answer=answer, blocks=blocks, plain=plain,
-                               enabled=backends.assistant is not None, examples=EXAMPLES[g.user.tier],
+                               enabled=backends.assistant is not None, remembered=remembered, memory=memory,
+                               examples=EXAMPLES[g.user.tier] + ((FOLLOW_UP_EXAMPLE,) if remembered else ()),
                                refusal=refusal_kind(answer.text, answer.denied) if answer else None)
+
+    @app.post("/ask/forget")
+    @needs(Permission.VIEWER)
+    def ask_forget():
+        memory.clear(g.user.id)
+        flash("The assistant has forgotten your earlier questions.", "ok")
+        return redirect(url_for("ask"))
 
     # ---- audit log ----------------------------------------------------------------------------------------
 

@@ -35,7 +35,9 @@ class AsyncRunner:
     def spawn(self, coro: Coroutine[Any, Any, None]) -> None:
         """Fire and forget (audit forwarding). A failure is logged, never raised to the request."""
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
-        future.add_done_callback(lambda f: f.exception() and log.warning("Background task failed: %s", f.exception()))
+        future.add_done_callback(
+            lambda f: not f.cancelled() and f.exception() and log.warning("Background task failed: %s", f.exception())
+        )
 
     def close(self) -> None:
         async def cancel_pending() -> None:
