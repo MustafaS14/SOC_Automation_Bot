@@ -44,7 +44,7 @@ index=linux sourcetype=linux:audit type=EXECVE a0="./splunkd"
 - **Fires when** any process named `./splunkd` is started. The real Splunk is never started like this.
 - **Result:** one row, `soc-victim`, `192.168.56.30` (the attacker), `High`. The columns `host`, `src_ip` and `severity` are what the bot's webhook reads, together with the alert's name.
 
-## Alert settings (to recreate in Splunk)
+## Alert settings (saved in Splunk)
 
 | Setting | Value |
 |---|---|
@@ -52,6 +52,8 @@ index=linux sourcetype=linux:audit type=EXECVE a0="./splunkd"
 | Type | Scheduled, cron `*/5 * * * *`, time range *Last 15 minutes* |
 | Trigger | Number of results greater than 0, *For each result* |
 | Throttle | Suppress on field `host` for 30 minutes |
+| Severity | High (Splunk level 4; the bot reads the `severity` column from the result, not this label) |
+| Sharing | App, so it is stored in the app's `savedsearches.conf` (admin read and write, everyone read) |
 | Action | *Add to Triggered Alerts* for now; later a custom action that posts to the bot's webhook with the `X-Webhook-Secret` header |
 
-The first attempt to save this alert was lost when the SIEM VM crashed. Once the alerts exist and work, a copy of their definitions (`savedsearches.conf`) should be stored under `infra/` so they can be restored.
+This alert was saved and shared on 2 November 2026 after the first attempt was lost in the SIEM crash. A copy of its definition is stored in [`infra/siem/splunk/savedsearches.conf`](../infra/siem/splunk/savedsearches.conf) so it can be restored. It only looks at the last 15 minutes, so it has not fired yet: it needs a fresh `./splunkd` start (a new Sandcat agent run on the victim) to be proven. Detection 1 has no saved alert yet.
