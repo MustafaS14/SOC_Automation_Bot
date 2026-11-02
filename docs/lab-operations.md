@@ -72,10 +72,12 @@ A snapshot is a saved state of a VM that you can return to. Take one before anyt
 
 - **Fix the clock first.** A VM resumed from a saved state keeps the old time until it re-syncs, and Splunk then stamps and searches events wrongly. On `soc-siem` run `sudo timedatectl set-ntp true`, `sudo systemctl restart systemd-timesyncd`, then `timedatectl` and check *System clock synchronized: yes*. Compare `date` with the victim.
 - **Do not start Caldera twice.** If `tmux ls` shows a `caldera` session, attach to it (`tmux attach -t caldera`) instead of running `python3 server.py` again.
-- **Login names.** Each VM uses the account created at install: `soc-siem` logs in as `soc-siem` (`ssh soc-siem@192.168.56.10`) and `soc-attacker` as `mus`. For the victim, use the name you created at install (see the PowerShell history tip in [troubleshooting.md](troubleshooting.md)). Passwords are never written in the repository.
+- **Login names.** `soc-siem` logs in as `soc-siem` (`ssh soc-siem@192.168.56.10`); `soc-attacker` and `soc-victim` both use `mus` (`ssh mus@192.168.56.30`, `ssh mus@192.168.56.20`). Passwords are never written in the repository.
 - **A VM that shows *Méditation profonde* (Guru Meditation) has crashed.** Power it off, start it again and wait for Splunk to be `healthy`. After a crash this can take 15 to 25 minutes, and Docker may show `starting` and then `unhealthy` before it settles. If the Splunk page says *Connection refused*, run `docker restart splunk` and wait. See [troubleshooting.md](troubleshooting.md).
 - **Prefer a clean shutdown at the end of a session** (*Machine, ACPI Shutdown*, or `sudo poweroff`) over saving the machine state; resumed VMs came back with a stale clock.
 - **Inspecting Splunk from the VM.** Run `docker exec -u splunk splunk ...` (the `-u splunk` matters), and test the web page with `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/en-GB/account/login`.
+- **Memory.** The three VMs reserve about 16 GB. Keep the Windows page file large (initial 32768 MB, maximum 65536 MB) and run `wsl --shutdown` first if a VM will not start (see [troubleshooting.md](troubleshooting.md)). Start `soc-siem` first and let it settle before the others.
+- **Running an attack test.** Start one agent on the victim from the home folder (`./splunkd -server http://192.168.56.30:8888 -group red -v`) and leave that window alone (use a second SSH window for anything else). Run an operation in Caldera, then stop the agent with `Ctrl+C`. Alerts run every 5 minutes, so allow up to 6 minutes. Check *Activity, Triggered Alerts* in Splunk.
 
 ## Ports used in the lab
 
