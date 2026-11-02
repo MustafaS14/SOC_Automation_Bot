@@ -348,21 +348,33 @@ Snapshots taken at this point: `soc-siem` and `SOC-Victim-Ubuntu`, both named `p
 
 **In simple words.** We turned the attacker on, let it run a few reconnaissance commands on the victim, and checked that Splunk saw them. Then we wrote the first two "tripwires" (detections). One works and was proven; the other is written but not proven yet.
 
-1. **Starting the attacker.** The first start failed with a generic VirtualBox error. It started on a later try after memory was freed (see [troubleshooting.md](troubleshooting.md)). The login name on all three VMs is `mus`, found in the PowerShell history.
+1. **Starting the attacker.** The first start failed with a generic VirtualBox error. It started on a later try after memory was freed (see [troubleshooting.md](troubleshooting.md)). The attacker's login name is `mus`, found in the PowerShell history (the SIEM uses a different one, see section 15).
 2. **Caldera.** The server started in `tmux` and listened on port 8888. A second attempt to start it printed "address already in use" errors, which only means the first copy was already running. Warnings about the `builder` plugin, Windows payload tools and a few missing abilities are harmless here.
 3. **The agent.** The Sandcat command from Caldera was run on the victim. The agent is named `splunkd` on purpose (it imitates Splunk's own name) and showed `Beacon (HTTP): ALIVE`.
 4. **A clock problem.** The SIEM had been resumed from a saved state and its clock was a day behind, so new events looked like they were from the future and the "last 15 minutes" search found nothing. Searching a wider window (`earliest=-2d latest=+2d`) showed the events were there. After `sudo timedatectl set-ntp true` the clock matched (12:04 UTC on 30 October). Do this after every resume.
 5. **What Splunk recorded.** The agent being downloaded and started (`curl`, `chmod +x`, `./splunkd -server http://192.168.56.30:8888 -group red -v`), then the operation's commands: `whoami`, `cut -d:` (reading the account list), `grep`, `ps aux` and `grep sshd`. Login-banner scripts (`tr`, `cut`) are background noise. Caldera runs its commands through `sh -c '...'`, so the real command can sit in field `a2`, not `a0`.
 6. **Detection 1, several discovery commands in a short time** (MITRE T1033, T1082, T1057, T1087.001). Written to read the real command from either field. It found no result yet because only two different commands (`whoami`, `ps`) fell in one ten-minute window and the rule needs three. Not proven.
 7. **Detection 2, a program called `./splunkd` started from a home directory** (MITRE T1036.004, masquerading). It found exactly one event, the agent start, and extracts the attacker's address `192.168.56.30` from the command. **Proven.**
-8. **The alert was not saved.** Setting it up needed a throttle field and an action, then Splunk said the connection may have been lost: the SIEM VM had crashed (VirtualBox *Guru Meditation*, shown in French as *Méditation profonde*). The alert has to be recreated after the VM is restarted. The cause of the crash has not been investigated.
+8. **The alert was not saved.** Setting it up needed a throttle field and an action, then Splunk said the connection may have been lost: the SIEM VM had crashed (VirtualBox *Guru Meditation*, shown in French as *Méditation profonde*). The alert had to be recreated after the VM was restarted (done on 2 November, see section 15). The cause of the crash has not been investigated.
 
 All detections are listed in [detections.md](detections.md).
 
-## 15. Next
+## 15. Restarting after the crash and saving the alert (2026-11-02)
 
-- Restart `soc-siem` after the crash, wait until Splunk is `healthy`, fix the clock, and look at `VBox.log` for the cause.
-- Recreate the `./splunkd` alert (every 5 minutes, last 15 minutes, throttled by `host` for 30 minutes), then prove detection 1 with a full Discovery run.
+**In simple words.** We turned the SIEM back on, worked through the things that stopped Splunk showing its web page, saved the first alert properly, and kept a copy of it in the repository.
+
+1. **Login name.** The `soc-siem` VM is entered with the user `soc-siem`, not `mus` (`mus` is the attacker's account). Earlier pages that said `mus` for all three machines were wrong and are corrected.
+2. **The clock.** The VM woke up four days behind (its login banner still said 29 October). `sudo timedatectl set-ntp true` and a restart of `systemd-timesyncd` fixed it. Memory (about 6 GB free, no swap use) and disk (36 percent used) were fine.
+3. **Splunk slow to become healthy.** `docker ps` showed Splunk as `health: starting` for about 15 minutes and then `unhealthy`, while Logstash was fine. Splunk was still running its start-up setup (one step, updating the HEC token, took about 5 minutes on this VM). The last health check showed the management port answering, so the label was only catching up.
+4. **The web page said "Connection refused".** The browser showed a short error from Splunk Web. The log showed it forwarding every page to an internal web service on port 8065 that nothing was listening on, while the main Splunk process was running. `docker restart splunk` fixed it and the login page worked again. The reason the web service did not start after the crash was not found.
+5. **Commands that misled.** `docker exec` without `-u splunk` runs as the wrong user and prints "Permission denied" and "pid file unreadable" even though Splunk is fine. The container has no `ss` tool. Use `docker exec -u splunk splunk ...`, and test pages with `curl` from the VM.
+6. **The alert is saved.** The `./splunkd` search returned its one row (the agent start on 30 October) and was saved as an alert with the settings in [detections.md](detections.md), severity High. A new alert is private, so it first sat in the user's own folder (`etc/users/admin/search/local/`). Sharing it with the app (*Edit Permissions*, *Display for: App*, read and write for admin, read for everyone) moved it to `etc/apps/search/local/savedsearches.conf`. A copy is stored in [`infra/siem/splunk/savedsearches.conf`](../infra/siem/splunk/savedsearches.conf) so it can be restored.
+7. **Not yet proven to fire.** The alert only looks at the last 15 minutes, so it will not fire until a new `./splunkd` start happens.
+
+## 16. Next
+
+- Prove the alert fires: start the attacker, fix the clock on each VM, restart the Sandcat agent on the victim, and look in *Activity, Triggered Alerts* within 5 minutes. Then prove detection 1 with a full Discovery run.
+- Look at `VBox.log` for the cause of the SIEM crash (not yet investigated).
 - Write a small custom Splunk alert action that posts the first result row to the bot's webhook with the `X-Webhook-Secret` header (the built-in webhook cannot add headers), with the secret read from a root-only file and never stored in the repo.
 - Create the `responder` user on the victim from [`infra/responder/`](../infra/responder/); run the bot in real mode; send a test alert with `curl`, then a real Caldera run; test isolation from a snapshot first.
 - Try the `op run` setup with a real 1Password item and the systemd credentials on `soc-siem`.
