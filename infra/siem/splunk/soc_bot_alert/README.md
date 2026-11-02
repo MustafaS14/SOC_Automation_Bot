@@ -38,8 +38,8 @@ Splunk is inside the `siem_default` Docker network, so `localhost` means the con
 ## Test
 
 ```
-curl -sS -X POST http://172.18.0.1:8765/webhook/splunk \\
-  -H "X-Webhook-Secret: <your secret>" -H "Content-Type: application/json" \\
+curl -sS -X POST http://172.18.0.1:8765/webhook/splunk \
+  -H "X-Webhook-Secret: <your secret>" -H "Content-Type: application/json" \
   -d '{"search_name":"Test alert","result":{"host":"soc-victim","src_ip":"192.168.56.30","severity":"Medium"}}'
 ```
 
