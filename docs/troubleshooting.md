@@ -64,3 +64,16 @@ Problems hit while building the lab, with the cause and the fix. Useful as a che
 | Typing in the window where the agent runs does nothing | The agent runs in the foreground and the typed lines wait until it stops | Use a second SSH window; `Ctrl+C` stops the agent |
 | Caldera shows two live agents and every step runs twice | The agent command was run twice | `pgrep -a splunkd`, then `sudo pkill -f "splunkd -server"` and start one agent |
 | The alert list shows an old *Next scheduled time* after a restart | Splunk has not recalculated the schedule yet | Wait a few minutes, then check `index=_internal sourcetype=scheduler savedsearch_name="<alert name>*"` |
+| Discord: "Improper token" when the bot starts | The token was pasted twice into `.env` | Reset the token, paste it once; a valid token has three dot-separated parts |
+| Discord: Acknowledge answers "The application didn't respond in time" | The alert channel is missing from `ALLOWED_CHANNEL_IDS` | Add it, restart the bot |
+| Bot: `address already in use` on port 8765 | An earlier bot process is still running | `pkill -f "python -m soc_bot"`, start again |
+| Bot: `python -m soc_bot` fails with a missing module | The virtual environment is not active | `source .venv/bin/activate` first |
+| Splunk: custom alert action not found in the `search` app | The app does not export the action | `export = system` in `metadata/default.meta`, then `/debug/refresh` |
+| Splunk alert editor does not list the custom action | Actions without a UI form are hidden | Add `action.soc_bot_webhook = 1` to the stanza in `savedsearches.conf` |
+| `| sendalert soc_bot_webhook` shows error code 1 | The ad-hoc search has no `search_name`, so the bot answers 400 | Expected; test with a saved alert or `curl` |
+| Splunk (in Docker) cannot reach the bot | `localhost` inside the container is the container | Use the `siem_default` gateway (`docker network inspect siem_default`), for example `172.18.0.1`, as `WEBHOOK_HOST` and in `local/url` |
+| A real alert fired but nothing appeared in Discord the second time | Throttle: `alert.suppress.period = 30m` per host | Wait out the window, or trigger the other detection |
+| Discovery burst never fires although Caldera ran Discovery | The run only repeated `ps`; the rule needs 3 different techniques in 10 minutes | Run `whoami`, `id`, `uname -a`, `hostname`, `ip a` on the victim |
+| Caldera: the agent download is 0 bytes | The first request to the server can return an empty file | Download again with `curl -sS ... -w` to see the size, then run it |
+| `grep` says "Binary file matches" on an audit log | The log contains non-text bytes | Use `grep -a` |
+| Second Acknowledge on the same alert logs a 409 | The incident is already acknowledged | Harmless; a friendlier message is on the to-do list |
