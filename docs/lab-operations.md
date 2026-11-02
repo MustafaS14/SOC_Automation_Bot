@@ -40,6 +40,18 @@ How to start, use and stop the lab. For how it was built, see [lab-build-log.md]
 
 Then run an operation. The first one is described in [../attack-scenarios/01-discovery.md](../attack-scenarios/01-discovery.md).
 
+## Starting and stopping the bot
+
+The bot is not a service yet, so it is started by hand after each boot of `soc-siem` (the Splunk containers start on their own):
+
+```
+ssh soc-siem@192.168.56.10
+cd ~/SOC_Automation_Bot && source .venv/bin/activate
+python -m soc_bot
+```
+
+It runs in the foreground; use a second SSH window for anything else and `Ctrl+C` to stop it. If it reports `address already in use`, an old copy is still running: `pkill -f "python -m soc_bot"`. Plain `python` outside the virtual environment fails. Setup is in [discord-setup.md](discord-setup.md); making it a systemd service is on the to-do list.
+
 ## Stopping the lab
 
 1. Stop the Sandcat agent on the victim (`Ctrl+C` in the terminal where it runs).
@@ -88,7 +100,7 @@ A snapshot is a saved state of a VM that you can return to. Take one before anyt
 | 8000 | Splunk Web | `soc-siem` |
 | 8088 | Splunk HEC (Logstash sends logs here) | `soc-siem` |
 | 8089 | Splunk REST API (hunts, AI lookups) | `soc-siem` |
-| 8765 | Bot webhook (Splunk alerts arrive here) | where the bot runs |
+| 8765 | Bot webhook (Splunk alerts arrive here); the bot listens on the Docker gateway `172.18.0.1` only | `soc-siem` |
 | 8080 | Web console | where the console runs |
 | 8888 | Caldera web interface | `soc-attacker` |
 | 7010, 7011, 7012 | Caldera agent contact ports | `soc-attacker` |
