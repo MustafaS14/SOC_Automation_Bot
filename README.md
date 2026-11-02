@@ -11,14 +11,14 @@ Part of a fully local SOC lab (no cloud): Caldera attack, victim logs, Splunk, t
 | Area | Status |
 |---|---|
 | Attacker VM with MITRE Caldera, victim VM with Sandcat agent and auditd | Built; first Discovery run recorded in [attack-scenarios/01-discovery.md](attack-scenarios/01-discovery.md) |
-| Bot (webhook, SQLite store, /hunt, SSH isolation, RBAC, audit) | Built and unit-tested; reviewed in [docs/security-review.md](docs/security-review.md); not yet run against a live Splunk or a real isolation |
+| Bot (webhook, SQLite store, /hunt, SSH isolation, RBAC, audit) | Built and unit-tested; reviewed in [docs/security-review.md](docs/security-review.md). Installed on the SIEM VM and connected to a private Discord server ([setup](docs/discord-setup.md)); alert cards, buttons and `/soc-help` proven live. Not yet run against a real isolation |
 | SIEM pipeline: Filebeat (victim), Logstash and Splunk in Docker (SIEM VM) | Working end to end: commands typed on the victim are searchable in Splunk within seconds, with the correct time; noise filtered (see [lab build log](docs/lab-build-log.md), sections 7 to 12) |
-| Splunk detections mapped to MITRE ATT&CK, webhook alerts | Two detections proven on real attack data and saved as alerts (see `docs/detections.md`); the webhook action that sends them to the bot is next |
+| Splunk detections mapped to MITRE ATT&CK, alert to bot | Two detections proven on real attack data. A custom Splunk alert action ([`soc_bot_alert`](infra/siem/splunk/soc_bot_alert/README.md)) posts them to the bot: a real Discovery alert reached Discord end to end |
 | Auto-enrichment playbook, dashboard, more attack scenarios | Ideas, after the pipeline works end to end |
 
 New to security? Read the [plain-language overview](docs/plain-language-overview.md) first.
 
-Documentation: [architecture](docs/architecture.md), [lab build log](docs/lab-build-log.md), [troubleshooting](docs/troubleshooting.md), [security review](docs/security-review.md), [bot refactor plan](docs/bot-refactor-plan.md).
+Documentation: [architecture](docs/architecture.md), [lab build log](docs/lab-build-log.md), [Discord setup](docs/discord-setup.md), [troubleshooting](docs/troubleshooting.md), [security review](docs/security-review.md), [bot refactor plan](docs/bot-refactor-plan.md).
 
 ## Start here
 
