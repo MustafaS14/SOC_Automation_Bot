@@ -66,7 +66,7 @@ index=linux sourcetype=linux:audit type=EXECVE a0="./splunkd"
 | Trigger | Results greater than 0, *For each result* | Results greater than 0, *For each result* |
 | Throttle | Field `host`, 30 minutes | Field `host`, 30 minutes |
 | Severity | Medium (in the search) | High (in the search and Splunk level 4) |
-| Action | *Add to Triggered Alerts* for now; later a custom action that posts to the bot's webhook with the `X-Webhook-Secret` header | The same |
+| Action | *Add to Triggered Alerts*, plus the custom action `soc_bot_webhook` that posts to the bot's webhook with the `X-Webhook-Secret` header (see [`soc_bot_alert`](../infra/siem/splunk/soc_bot_alert/README.md); enabled by `action.soc_bot_webhook = 1` in `savedsearches.conf`) | The same |
 | Sharing | App (admin read and write, everyone read) | App |
 
 ## Stored copy and restoring
@@ -76,3 +76,7 @@ The definitions of both alerts are stored in [`infra/siem/splunk/savedsearches.c
 ## Idea: shell history cleared
 
 Every agent start runs `> $HOME/.bash_history && unset HISTFILE`, which hides what an attacker did (MITRE T1070.003). A rule only needs to decode the command as above and match `bash_history` together with `unset HISTFILE`. Not built yet.
+
+## Proven end to end
+
+A real alert has travelled the whole path: commands on the victim, auditd, Filebeat, Logstash, Splunk, the *Discovery burst* alert, the custom alert action, the bot and a card in `#soc-alerts`. The Caldera Discovery run only repeated `ps`, so `whoami`, `id`, `uname -a`, `hostname` and `ip a` were typed on the victim to reach three techniques in one ten-minute window. The alert throttle (30 minutes per host) means a second firing in that window is silent by design.
