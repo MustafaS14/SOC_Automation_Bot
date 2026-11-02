@@ -26,9 +26,9 @@ Turn on Developer Mode (User Settings, Advanced) to copy IDs.
 
 | Channel | Purpose | Who sees it |
 |---|---|---|
-| `#soc-commands` | Slash commands (`/incident`, `/enrich`, `/hunt`, `/isolate`, `/ask`, `/soc-help`) | all four roles |
-| `#soc-alerts` | Alert cards posted by the bot with their buttons | all four roles |
-| `#soc-audit` | Append-only log of every action taken | analyst, responder, admin |
+| `#soc-commands` | Slash commands (`/incident`, `/enrich`, `/hunt`, `/isolate`, `/ask`, `/soc-help`) | the roles you choose |
+| `#soc-alerts` | Alert cards posted by the bot with their buttons | the roles you choose |
+| `#soc-audit` | Feed of every action taken (acknowledge, close, isolate) | the roles you choose; each only needs View Channel |
 
 All three are **private channels**. Roles: `soc-viewer`, `soc-analyst`, `soc-responder`, `soc-admin`, mapped to the bot's permission tiers.
 
