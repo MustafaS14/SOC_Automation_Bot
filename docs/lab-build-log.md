@@ -383,12 +383,44 @@ All detections are listed in [detections.md](detections.md).
 6. **Detection 1 rewritten and proven.** A Discovery operation (`discovery-02`, planner atomic, plain-text, group red) ran `whoami`, `id`, `uname`, several `ps aux | grep ...` and `cut -d: -f1 /etc/passwd | grep ...`. The new rule sorts commands into kinds of activity and fires on three or more kinds in ten minutes. It returned one row with four kinds and is saved as a second alert (Medium). Both alerts are copied to [`infra/siem/splunk/savedsearches.conf`](../infra/siem/splunk/savedsearches.conf).
 7. **Mistakes to avoid.** Commands typed into the window where the agent runs in the foreground are not run; they wait until the agent stops, so use a second SSH window. Starting the agent twice leaves two live agents and doubles every step. Stop old ones (`sudo pkill -f "splunkd -server"`) before starting one.
 
-## 17. Next
+## 17. Discord application, server and bot install
 
+The bot needs a Discord application and a private server before it can run. Details and the exact settings are in [discord-setup.md](discord-setup.md); in short:
+
+- A new application with a bot user. The **Public Bot** switch is off and the **Install Link** is set to None, so nobody but the owner can add it to a server.
+- A private server with three private channels (`#soc-commands`, `#soc-alerts`, `#soc-audit`) and four roles (`soc-viewer`, `soc-analyst`, `soc-responder`, `soc-admin`). The roles only get *View Channel*; the bot gets *View Channel, Send Messages, Embed Links, Read Message History* on each channel. All intents stay off.
+- The bot was installed on `soc-siem` in a Python virtual environment. Its `.env` holds the token, the server and channel IDs, the role IDs and the webhook secret. It is never committed. The bot is started with `python -m soc_bot` inside the venv.
+- A `curl` to `/webhook/splunk` with the secret header produced the first alert card (`#1 - Test alert from curl`) with its Acknowledge, Enrich IP and Isolate host buttons.
+
+Problems met on the way:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "Improper token" at start | The token was pasted twice into `.env` | Reset the token, paste it once, check that it has three dot-separated parts. |
+| Acknowledge says "didn't respond in time" | The alert channel was missing from `ALLOWED_CHANNEL_IDS` | Add the alert channel ID to the list and restart the bot. |
+| "address already in use" on start | An earlier bot process was still running | `pkill -f "python -m soc_bot"`, then start again. |
+| Commands pasted into the bot's window do nothing | The bot runs in the foreground there | Use a second SSH window. |
+
+## 18. Splunk custom alert action and the first real alert
+
+Splunk's built-in webhook cannot add a header, so a small custom alert action, `soc_bot_alert`, posts to the bot with the `X-Webhook-Secret` header ([app and install steps](../infra/siem/splunk/soc_bot_alert/README.md)).
+
+- Splunk runs in Docker, so it reaches the bot at the `siem_default` network gateway, `172.18.0.1`, not at `localhost`. The bot listens only on that address.
+- The action was invisible to the `search` app until `metadata/default.meta` had `export = system`. `debug/refresh` reloads the config without a restart.
+- The alert editor does not list custom actions without a UI form, so `action.soc_bot_webhook = 1` was added to both saved searches in [`savedsearches.conf`](../infra/siem/splunk/savedsearches.conf).
+- An ad-hoc `| sendalert soc_bot_webhook` returns an error (the bot answers 400 because there is no `search_name`); that is expected and still proves the action is visible.
+
+**End-to-end proof.** The Masquerading detection fires when the Caldera agent starts, but its 30-minute throttle was still active. The Discovery detection needs three different techniques inside ten minutes, and the Caldera Discovery run only looped `ps`. So `whoami`, `id`, `uname -a`, `hostname` and `ip a` were run by hand on the victim. The next 5-minute search found them, and the **Discovery burst** card appeared in `#soc-alerts` about a minute later: Caldera / manual commands, auditd, Filebeat, Logstash, Splunk alert, custom action, bot, Discord. Times: Splunk and the VMs are UTC, the host PC is UTC+1.
+
+Notes: a second Acknowledge on the same alert produces a harmless 409 in the bot log; and `grep -a` is needed on audit logs because they can contain binary bytes.
+
+## 19. Next
+
+- Run the bot as a systemd service on `soc-siem` instead of by hand.
 - Watch the host's memory: the SIEM crashes and the victim's failed starts point to Windows running out of commit (see section 16). Cap WSL's memory with a `.wslconfig` and keep the page file large.
 - Add detection 3 (shell history cleared, T1070.003) and decide whether to tighten the discovery threshold.
-- Write a small custom Splunk alert action that posts the first result row to the bot's webhook with the `X-Webhook-Secret` header (the built-in webhook cannot add headers), with the secret read from a root-only file and never stored in the repo.
-- Create the `responder` user on the victim from [`infra/responder/`](../infra/responder/); run the bot in real mode; send a test alert with `curl`, then a real Caldera run; test isolation from a snapshot first.
+- Create the `responder` user on the victim from [`infra/responder/`](../infra/responder/); run the bot in real mode; test isolation from a snapshot first.
+- Show a friendly message for a second Acknowledge, and update the card after it.
 - Try the `op run` setup with a real 1Password item and the systemd credentials on `soc-siem`.
 - Review and merge the `web-app` branch.
 - Check Anthropic's terms for always-on Claude Code use before switching on the real AI backend, and decide whether the repository is public or private (some pages still say private).
