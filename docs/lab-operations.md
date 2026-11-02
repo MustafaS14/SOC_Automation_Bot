@@ -72,8 +72,10 @@ A snapshot is a saved state of a VM that you can return to. Take one before anyt
 
 - **Fix the clock first.** A VM resumed from a saved state keeps the old time until it re-syncs, and Splunk then stamps and searches events wrongly. On `soc-siem` run `sudo timedatectl set-ntp true`, `sudo systemctl restart systemd-timesyncd`, then `timedatectl` and check *System clock synchronized: yes*. Compare `date` with the victim.
 - **Do not start Caldera twice.** If `tmux ls` shows a `caldera` session, attach to it (`tmux attach -t caldera`) instead of running `python3 server.py` again.
-- **Login name.** All three VMs use the account `mus` for SSH. Passwords are never written in the repository.
-- **A VM that shows *Méditation profonde* (Guru Meditation) has crashed.** Power it off, start it again and wait for Splunk to be `healthy`. See [troubleshooting.md](troubleshooting.md).
+- **Login names.** Each VM uses the account created at install: `soc-siem` logs in as `soc-siem` (`ssh soc-siem@192.168.56.10`) and `soc-attacker` as `mus`. For the victim, use the name you created at install (see the PowerShell history tip in [troubleshooting.md](troubleshooting.md)). Passwords are never written in the repository.
+- **A VM that shows *Méditation profonde* (Guru Meditation) has crashed.** Power it off, start it again and wait for Splunk to be `healthy`. After a crash this can take 15 to 25 minutes, and Docker may show `starting` and then `unhealthy` before it settles. If the Splunk page says *Connection refused*, run `docker restart splunk` and wait. See [troubleshooting.md](troubleshooting.md).
+- **Prefer a clean shutdown at the end of a session** (*Machine, ACPI Shutdown*, or `sudo poweroff`) over saving the machine state; resumed VMs came back with a stale clock.
+- **Inspecting Splunk from the VM.** Run `docker exec -u splunk splunk ...` (the `-u splunk` matters), and test the web page with `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/en-GB/account/login`.
 
 ## Ports used in the lab
 
