@@ -454,6 +454,12 @@ def test_the_loading_animation_is_in_the_page_and_respects_reduced_motion(stack)
     loader = css[css.index("loading animation:"):]
     assert "offset-rotate: auto" in loader and "scaleX" not in loader
     assert float(re.search(r"o-lap ([\d.]+)s linear infinite", loader).group(1)) <= 2.0
+    # constant speed: the lap is linear, and size and brightness are never eased to a stop (no ease-in-out)
+    assert "o-size 1.5s linear infinite" in loader and "ease-in-out" not in loader
+    # size and brightness are on an inner layer, so scaling never changes the speed along the orbit
+    assert re.search(r"\.o-fly \{[^}]*animation: o-size", loader) and not re.search(r"\.o-rocket \{[^}]*o-size", loader)
+    assert "scrollbar-width: none" in css and "::-webkit-scrollbar" in css  # no scrollbars inside the chat
+    assert 'id="chat-log"' in client.get("/").get_data(as_text=True) and 'tabindex="0"' in client.get("/").get_data(as_text=True)
 
 
 # ---- one question at a time, ownership of a remembered conversation number, and no automatic retries --------------

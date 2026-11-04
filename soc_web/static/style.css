@@ -372,7 +372,7 @@ ul.examples a:hover, ul.examples a:focus-visible { border-color: var(--teal); co
    is flying. On the near half of the orbit it passes in front of the planet, a little larger and brighter; on the far
    half it passes behind it, smaller and dimmer. One lap takes under two seconds. */
 .msg.pending { display: flex; align-items: center; gap: 14px; background: none; padding: 2px 0; max-width: none; }
-.msg.pending .text { white-space: nowrap; font: 600 11px/1.3 var(--display); letter-spacing: .16em; text-transform: uppercase; color: var(--teal); }
+.msg.pending .text { min-width: 0; font: 600 11px/1.3 var(--display); letter-spacing: .16em; text-transform: uppercase; color: var(--teal); }
 .orbit { position: relative; width: 150px; height: 44px; flex: none; isolation: isolate; }
 .o-path { position: absolute; left: 13px; top: 11px; width: 124px; height: 22px; border-radius: 50%; border: 1px solid rgba(143, 193, 181, .26); z-index: 0; }
 .o-planet {
@@ -383,20 +383,28 @@ ul.examples a:hover, ul.examples a:focus-visible { border-color: var(--teal); co
 .o-rocket {
   position: absolute; left: 0; top: 0; width: 18px; height: 6px; z-index: 3;
   offset-path: path("M 13 22 A 62 11 0 1 0 137 22 A 62 11 0 1 0 13 22"); offset-rotate: auto; offset-anchor: 50% 50%;
-  animation: o-lap 1.5s linear infinite, o-depth 1.5s step-end infinite, o-size 1.5s ease-in-out infinite;
+  animation: o-lap 1.5s linear infinite, o-depth 1.5s step-end infinite;
 }
-.o-rocket svg { position: absolute; inset: 0; width: 18px; height: 6px; overflow: visible; display: block; }
-.o-rocket::before { content: ""; position: absolute; right: 16px; top: 2px; width: 22px; height: 2px; border-radius: 2px; background: linear-gradient(to left, rgba(255, 138, 0, .6), rgba(255, 138, 0, 0)); }
+/* Size and brightness live on an inner layer, so they never touch the motion along the orbit: scaling the element that
+   follows the path would stretch its position too, and the speed would no longer be constant. */
+.o-fly { position: absolute; inset: 0; animation: o-size 1.5s linear infinite; }
+.o-fly svg { position: absolute; inset: 0; width: 18px; height: 6px; overflow: visible; display: block; }
+.o-fly::before { content: ""; position: absolute; right: 16px; top: 2px; width: 22px; height: 2px; border-radius: 2px; background: linear-gradient(to left, rgba(255, 138, 0, .6), rgba(255, 138, 0, 0)); }
 @keyframes o-lap { from { offset-distance: 0%; } to { offset-distance: 100%; } }
 @keyframes o-depth { 0% { z-index: 3; } 50% { z-index: 1; } }
+/* Size and brightness follow a sine wave over the lap (each quarter eased like a quarter of a sine), so they change
+   continuously and never pause or pulse; the rocket itself moves along the orbit at a constant speed (linear). */
 @keyframes o-size {
-  0%, 50%, 100% { scale: .9; opacity: .85; }
-  25% { scale: 1.12; opacity: 1; }
-  75% { scale: .68; opacity: .5; }
+  0% { scale: .9; opacity: .85; animation-timing-function: cubic-bezier(.61, 1, .88, 1); }
+  25% { scale: 1.12; opacity: 1; animation-timing-function: cubic-bezier(.12, 0, .39, 0); }
+  50% { scale: .9; opacity: .85; animation-timing-function: cubic-bezier(.61, 1, .88, 1); }
+  75% { scale: .68; opacity: .5; animation-timing-function: cubic-bezier(.12, 0, .39, 0); }
+  100% { scale: .9; opacity: .85; }
 }
 /* with reduced motion the rocket rests on the orbit and the words carry the message */
 @media (prefers-reduced-motion: reduce) {
-  .o-rocket { animation: none; offset-distance: 14%; }
+  .o-rocket, .o-fly { animation: none; }
+  .o-rocket { offset-distance: 14%; }
 }
 .chat.restored { animation: none; }
 .chat-empty { font-size: 13.5px; margin: 4px 2px 8px; }
@@ -407,3 +415,7 @@ ul.examples a:hover, ul.examples a:focus-visible { border-color: var(--teal); co
 .chat-model label { margin: 0; padding: 3px 14px; border-radius: 999px; font: 500 13px var(--body); color: var(--muted); cursor: pointer; text-transform: none; letter-spacing: normal; }
 .chat-model input:checked + label { background: var(--teal); color: var(--ink); font-weight: 600; }
 .chat-model input:focus-visible + label { outline: 3px solid var(--cream); outline-offset: 2px; }
+
+/* no scrollbars inside the chat: it still scrolls with the wheel, touch and keyboard */
+.chat-log, .chat-side, #chat-form textarea { scrollbar-width: none; -ms-overflow-style: none; }
+.chat-log::-webkit-scrollbar, .chat-side::-webkit-scrollbar, #chat-form textarea::-webkit-scrollbar { display: none; }
