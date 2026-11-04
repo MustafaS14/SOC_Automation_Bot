@@ -14,6 +14,13 @@ def test_audit_logger_writes_jsonl_and_closes_file(tmp_path):
     assert audit._file_handler.stream is None  # handle released
 
 
+def test_close_can_be_called_twice(tmp_path):
+    audit = AuditLogger(tmp_path / "audit.jsonl")
+    audit.record(actor="a", actor_id=1, action="x", target="t", outcome="success")
+    audit.close()
+    audit.close()  # a second call is a no-op, not an AttributeError from QueueListener.stop()
+
+
 def test_audit_logger_appends_across_restarts(tmp_path):
     path = tmp_path / "audit.jsonl"
     for action in ("first", "second"):

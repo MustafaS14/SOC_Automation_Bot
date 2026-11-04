@@ -41,12 +41,16 @@ class AuditLogger:
         records: queue.SimpleQueue[logging.LogRecord] = queue.SimpleQueue()
         self._listener = QueueListener(records, self._file_handler)
         self._listener.start()
+        self._closed = False
         self._logger = logging.getLogger("soc_bot.audit")
         self._logger.propagate = False
         self._logger.setLevel(logging.INFO)
         self._logger.handlers = [QueueHandler(records)]
 
     def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
         self._listener.stop()
         self._file_handler.close()
 
