@@ -6,7 +6,7 @@ import sys
 import pytest
 
 from soc_bot.ai import build_assistant
-from soc_bot.ai.backends import BackendError, ClaudeCodeBackend, MockBackend
+from soc_bot.ai.backends import _ENV_KEEP, BackendError, ClaudeCodeBackend, MockBackend
 from soc_bot.ai.tools import ToolContext
 from soc_bot.config import Settings
 
@@ -59,9 +59,19 @@ def test_default_environment_keeps_only_what_login_needs():
         env = ClaudeCodeBackend().build_env()
     finally:
         os.environ.pop("DISCORD_TOKEN")
-    assert "DISCORD_TOKEN" not in env and set(env) <= {
-        "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME"
-    }
+    assert "DISCORD_TOKEN" not in env and set(env) <= set(_ENV_KEEP)
+
+
+def test_the_windows_names_claude_code_needs_pass_but_no_secret_ever_does(monkeypatch):
+    """Without SystemRoot and the profile folders Claude Code cannot start on Windows or find its login."""
+    for name in ("SYSTEMROOT", "USERPROFILE", "APPDATA"):
+        monkeypatch.setenv(name, "value")
+    for name in ("SOC_WEB_SECRET_KEY", "ABUSEIPDB_API_KEY", "SPLUNK_TOKEN", "WEBHOOK_SECRET", "OP_SERVICE_ACCOUNT_TOKEN",
+                 "ANTHROPIC_API_KEY"):
+        monkeypatch.setenv(name, "SECRET")
+    env = ClaudeCodeBackend().build_env()
+    assert {"SYSTEMROOT", "USERPROFILE", "APPDATA"} <= {k.upper() for k in env}
+    assert not [k for k in env if any(w in k.upper() for w in ("TOKEN", "SECRET", "KEY", "PASSWORD", "CREDENTIAL"))]
 
 
 async def test_missing_command_is_a_backend_error():

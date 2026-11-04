@@ -1,0 +1,54 @@
+{# The chat widget on every signed-in page. Without JavaScript the round button is a plain link to the Ask page. #}
+{% if user and chat_on %}
+<a id="chat-open" class="chat-fab" href="{{ url_for('ask') }}" aria-label="Open the assistant chat" aria-controls="chat-panel" aria-expanded="false">
+  {% if avatar %}<img src="{{ url_for('static', filename=avatar) }}" alt="" width="56" height="56">{% else %}<span aria-hidden="true">AI</span>{% endif %}
+</a>
+<aside id="chat-panel" class="chat" role="dialog" aria-label="Assistant chat" hidden>
+  <header class="chat-head">
+    {% if avatar %}<img class="chat-logo" src="{{ url_for('static', filename=avatar) }}" alt="" width="34" height="34">{% endif %}
+    <h2 id="chat-title">New conversation</h2>
+    <button type="button" id="chat-new" class="chat-btn">New chat</button>
+    <button type="button" id="chat-close" class="chat-btn" aria-label="Close the chat">Close</button>
+  </header>
+  <div class="chat-body">
+    <div class="chat-side" role="group" aria-label="Conversations">
+      <ul id="chat-list"></ul>
+      <p class="muted chat-empty" id="chat-empty" hidden>No conversations yet.</p>
+      <button type="button" id="chat-archived-toggle" class="link">Show archived</button>
+    </div>
+    <section class="chat-main">
+      <div id="chat-log" class="chat-log" role="log" aria-live="polite" aria-label="Conversation" tabindex="0"></div>
+      <p class="chat-error" id="chat-error" role="alert" hidden></p>
+      <label class="chat-ctx" for="chat-use-page"><input type="checkbox" id="chat-use-page" checked> <span id="chat-chip">using: this page</span></label>
+      {% if chat_models %}
+      <div class="chat-model" role="radiogroup" aria-label="Claude model for the next question">
+        {% for key, label in chat_models.items() %}<input type="radio" name="chat-model" id="chat-model-{{ key }}" value="{{ key }}"{% if loop.first %} checked{% endif %}><label for="chat-model-{{ key }}">{{ label }}</label>{% endfor %}
+      </div>
+      {% endif %}
+      <form id="chat-form">
+        <label for="chat-input" class="sr">Your question</label>
+        <textarea id="chat-input" maxlength="500" rows="2" required placeholder="Ask about this page or the SOC"></textarea>
+        <button class="primary" type="submit" id="chat-send">Send</button>
+      </form>
+      <p class="muted chat-note">Read-only. Chats are kept on the console server; secrets are removed before saving.</p>
+    </section>
+  </div>
+</aside>
+<template id="chat-pending-tpl">
+  <div class="msg pending" role="status">
+    <div class="orbit" aria-hidden="true">
+      <span class="o-path"></span>
+      <span class="o-planet"></span>
+      <span class="o-rocket"><span class="o-fly">
+        <svg viewBox="0 0 24 8" focusable="false">
+          <path d="M7 1.6 L4 0 L11.5 1.6 Z M7 6.4 L4 8 L11.5 6.4 Z" fill="#8fc1b5"/>
+          <path d="M6 1.7 H17 C20 1.7 22.6 3 24 4 C22.6 5 20 6.3 17 6.3 H6 Z" fill="#f2d98d"/>
+          <circle cx="15" cy="4" r="1.15" fill="#2d3b5a"/>
+        </svg>
+      </span></span>
+    </div>
+    <div class="text">The assistant is thinking&hellip;</div>
+  </div>
+</template>
+<script src="{{ url_for('static', filename='chat.js') }}" defer></script>
+{% endif %}
