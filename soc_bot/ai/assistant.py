@@ -180,6 +180,7 @@ class Assistant:
         automatic: bool = False,
         history: Sequence[Exchange] = (),
         page: PageContext | None = None,
+        model: str = "",
     ) -> AiAnswer:
         question = " ".join(question.split())
         if not question:
@@ -200,7 +201,9 @@ class Assistant:
                 return answer
             answer.calls += 1
             try:
-                raw = await self._backend.complete(SYSTEM_PROMPT, build_prompt(level, question, lookups, final=final, history=history, page=page))
+                prompt = build_prompt(level, question, lookups, final=final, history=history, page=page)
+                # A per-question model is passed only when one was chosen, so other backends need not know about it.
+                raw = await self._backend.complete(SYSTEM_PROMPT, prompt, **({"model": model} if model else {}))
             except BackendError as exc:
                 log.warning("AI backend failed: %s", exc)
                 answer.text = "The assistant is unavailable right now."

@@ -33,6 +33,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from soc_bot import hunts
 from soc_bot.ai import split_plain_words
 from soc_bot.ai.assistant import MAX_QUESTION_CHARS
+from soc_bot.ai.backends import CHAT_MODELS
 from soc_bot.ai.prompt import DENIED_REPLY, OFF_TOPIC_REPLY
 from soc_bot.ai.tools import LEVEL_LABELS
 from soc_bot.audit import entry_channel, entry_denied, search
@@ -220,6 +221,13 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     recent_results = pagecontext.RecentResults()
     asking: set[int] = set()  # users with a question being answered right now: one at a time, whichever tab or page
     asking_lock = threading.Lock()
+    # The Sonnet/Haiku switch only means something with the real assistant; the mock ignores the choice.
+    models_on = CHAT_MODELS if backends.settings.ai_backend == "claude_code" else None
+
+    def chosen_model(value: Any) -> str:
+        """The model asked for, if it is one of the allowed two and the real assistant is on; otherwise "" (default)."""
+        return value if models_on and isinstance(value, str) and value in CHAT_MODELS else ""
+
     avatar = "bot-avatar.png" if (Path(app.static_folder or "") / "bot-avatar.png").is_file() else None
 
     # ---- helpers ------------------------------------------------------------------------------------------
@@ -298,7 +306,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         return {"user": g.get("user"), "P": Permission, "mock": backends.settings.mock_mode,
                 "sysstatus": probe.snapshot() if g.get("user") else None,
                 "level_label": LEVEL_LABELS, "ranks": RANKS, "avatar": avatar,
-                "chat_on": backends.assistant is not None}
+                "chat_on": backends.assistant is not None, "chat_models": models_on}
 
     @app.template_filter("when")
     def when(dt: Any) -> str:
@@ -532,7 +540,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         return render_template("hunt.html", **ctx)
 
     def ask_and_record(question: str, chat_id: int | None, *, page: pagecontext.PageContext | None,
-                       via: str, history: list | None = None) -> tuple[Chat, Any, list]:
+                       via: str, history: list | None = None, model: str = "") -> tuple[Chat, Any, list]:
         """One question, asked as the signed-in user and kept in their conversation (a new one when `chat_id` is None).
         Returns the conversation, the assistant's answer and the history it was given. Raises HANDLED errors."""
         tier, uid = g.user.tier, g.user.id
@@ -566,7 +574,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
             try:
                 answer = call(
                     backends.assistant.ask(question, tier, uid, history=history,
-                                           page=(page.label, page.text) if page else None),
+                                           page=(page.label, page.text) if page else None, model=model),
                     timeout=backends.settings.ai_timeout + 30,
                 )
             except Exception:
@@ -578,7 +586,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
                 asking.discard(uid)
         audit("ai.ask", LEVEL_LABELS[tier], answer.outcome, tools=",".join(answer.tools_used) or None,
               denied=True if answer.denied else None, calls=answer.calls, followup=len(history) or None,
-              question=question[:200], page=page.label if page else None, conversation=chat.id, via=via)
+              question=question[:200], page=page.label if page else None, conversation=chat.id, via=via,
+              model=model or None)
         # Only answers backed by a lookup are remembered: a follow-up explains the data, and an explanation (or an
         # "ask something first" reply) is not data to explain again.
         lookup_backed = (answer.outcome == "answered" and answer.tools_used and not answer.denied
@@ -605,7 +614,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
                 flash("The AI assistant is not enabled (AI_BACKEND).", "error")
             else:
                 try:
-                    current, answer, _ = ask_and_record(question, chat_id, page=None, via="ask")
+                    current, answer, _ = ask_and_record(question, chat_id, page=None, via="ask",
+                                                        model=chosen_model(request.form.get("model")))
                 except ChatError as exc:
                     flash(str(exc), "error")
                 except HANDLED as exc:
@@ -618,7 +628,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
                                examples=EXAMPLES[g.user.tier] + ((FOLLOW_UP_EXAMPLE,) if remembered else ()),
                                refusal=refusal_kind(answer.text, answer.denied) if answer else None,
                                conversations=chats.list(g.user.id, g.user.tier), current=current,
-                               transcript=transcript)
+                               transcript=transcript, model_choice=chosen_model(request.form.get("model")))
 
     @app.post("/ask/forget")
     @needs(Permission.VIEWER)
@@ -760,7 +770,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         question = str(body.get("question", "")).strip()
         page = page_context(str(body.get("path", ""))) if body.get("use_page") is True else None
         try:
-            chat, answer, _ = ask_and_record(question, chat_id_from(body.get("conversation")), page=page, via="widget")
+            chat, answer, _ = ask_and_record(question, chat_id_from(body.get("conversation")), page=page, via="widget",
+                                             model=chosen_model(body.get("model")))
         except ChatBusy as exc:
             return json_error(str(exc), 429)
         except ChatError as exc:

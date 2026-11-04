@@ -400,3 +400,10 @@ ul.examples a:hover, ul.examples a:focus-visible { border-color: var(--teal); co
 }
 .chat.restored { animation: none; }
 .chat-empty { font-size: 13.5px; margin: 4px 2px 8px; }
+
+/* Sonnet / Haiku switch: a small two-part pill above the question box */
+.chat-model { display: inline-flex; align-self: flex-start; margin: 0 0 8px; padding: 2px; border: 1px solid var(--field); border-radius: 999px; background: var(--deep); }
+.chat-model input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.chat-model label { margin: 0; padding: 3px 14px; border-radius: 999px; font: 500 13px var(--body); color: var(--muted); cursor: pointer; text-transform: none; letter-spacing: normal; }
+.chat-model input:checked + label { background: var(--teal); color: var(--ink); font-weight: 600; }
+.chat-model input:focus-visible + label { outline: 3px solid var(--cream); outline-offset: 2px; }

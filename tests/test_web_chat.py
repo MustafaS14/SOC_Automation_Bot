@@ -356,7 +356,7 @@ def test_the_widget_script_keeps_nothing_in_the_browser_and_never_writes_html():
     # The one thing remembered in the tab is whether the panel is open and which conversation (a number) it shows,
     # so changing page does not close it. No question or answer text is ever stored there.
     assert js.count("sessionStorage.setItem") == 1 and js.count("sessionStorage.getItem") == 1
-    assert 'JSON.stringify({ open: !panel.hidden, conversation: state.conversation })' in js
+    assert 'JSON.stringify({ open: !panel.hidden, conversation: state.conversation, model: chosenModel() })' in js
     assert '"Escape"' in js and "aria-expanded" in js and "textContent" in js
 
 
@@ -580,3 +580,103 @@ def test_the_list_says_which_conversation_has_a_question_being_answered(stack): 
     assert other_tier.id not in {c["id"] for c in listed(client)}  # another role's pending question is not shown
     someone_else, _ = login(app, "triage")
     assert listed(someone_else) == []
+
+
+# ---- the Sonnet / Haiku switch --------------------------------------------------------------------------------------
+
+from soc_bot.ai.backends import CHAT_MODELS, BackendError, ClaudeCodeBackend  # noqa: E402
+from soc_bot.config import Settings  # noqa: E402
+from soc_web.app import create_app  # noqa: E402
+from soc_web.config import WebSettings  # noqa: E402
+from soc_web.runtime import AsyncRunner, build_backends  # noqa: E402
+from soc_web.users import UserStore  # noqa: E402
+
+from .web_helpers import PASSWORD  # noqa: E402
+
+
+@pytest.fixture
+def relay_stack(tmp_path):
+    """The console with the claude_code backend selected, but a recording stand-in instead of the real relay."""
+    settings = Settings(
+        discord_token="", guild_id=None, allowed_channel_ids=frozenset(), audit_channel_id=None,
+        read_role_ids=frozenset(), triage_role_ids=frozenset(), response_role_ids=frozenset(),
+        isolation_denylist=(), mock_mode=True, ai_backend="claude_code", ai_command="claude-not-installed",
+        audit_log_path=str(tmp_path / "audit.jsonl"),
+    )
+    runner = AsyncRunner()
+    backends = build_backends(settings, runner)
+    users = UserStore(":memory:", max_failed=3, lockout_minutes=15)
+    users.create("read", PASSWORD, "read")
+    app = create_app(WebSettings(secret_key="k" * 40, secure_cookies=False), backends, users)
+    seen = []
+
+    class Recorder:
+        async def complete(self, system, prompt, **kwargs):
+            seen.append(kwargs)
+            return '{"answer": "ok"}'
+
+    backends.assistant._backend = Recorder()
+    yield app, backends, seen
+    backends.close()
+    runner.close()
+    users.close()
+
+
+def test_the_switch_is_shown_only_when_the_real_assistant_is_on(relay_stack, stack):  # noqa: F811
+    relay_app, _, _ = relay_stack
+    client, _ = login(relay_app, "read")
+    html = client.get("/").get_data(as_text=True)
+    assert 'id="chat-model-sonnet"' in html and 'id="chat-model-haiku"' in html
+    assert 'for="chat-model-haiku"' in html and 'role="radiogroup"' in html
+    assert '<option value="haiku"' in client.get("/ask").get_data(as_text=True)
+    mock_app, _, _ = stack
+    mock_client, _ = login(mock_app, "read")
+    assert "chat-model" not in mock_client.get("/").get_data(as_text=True)  # the mock would ignore it
+
+
+def test_the_chosen_model_reaches_the_backend_and_the_audit_log(relay_stack):  # noqa: F811
+    app, backends, seen = relay_stack
+    client, _ = login(app, "read")
+    chat(client, "Summarise incident 1", model="haiku")
+    chat(client, "Summarise incident 1", model="sonnet")
+    assert seen == [{"model": "haiku"}, {"model": "sonnet"}]
+    backends.audit_log.close()
+    entries = [json.loads(line) for line in Path(backends.settings.audit_log_path).read_text(encoding="utf-8").splitlines()]
+    assert [e.get("model") for e in entries if e["action"] == "ai.ask"] == ["haiku", "sonnet"]
+
+
+@pytest.mark.parametrize("bad", ["opus", "Haiku", "haiku ", "--dangerously-skip-permissions", "sonnet --tools Bash",
+                                 "claude-fable-5-1", "", None, 5, ["haiku"], {"model": "haiku"}, True])
+def test_anything_but_the_two_allowed_models_is_ignored(relay_stack, bad):  # noqa: F811
+    app, _, seen = relay_stack
+    client, _ = login(app, "read")
+    assert chat(client, "Summarise incident 1", model=bad).status_code == 200
+    assert seen == [{}]  # no model argument at all: the configured default is used
+
+
+def test_the_ask_page_takes_the_same_choice_and_the_mock_ignores_it(relay_stack, stack):  # noqa: F811
+    app, _, seen = relay_stack
+    client, _ = login(app, "read")
+    html = client.get("/ask").get_data(as_text=True)
+    client.post("/ask", data={"csrf_token": token(html), "question": "Summarise incident 1", "model": "haiku"})
+    client.post("/ask", data={"csrf_token": token(html), "question": "Summarise incident 1", "model": "--evil"})
+    assert seen == [{"model": "haiku"}, {}]
+    mock_app, mock_backends, _ = stack
+    spy = spy_on(mock_backends)
+    mock_client, _ = login(mock_app, "read")
+    chat(mock_client, "Summarise incident 1", model="haiku")
+    assert len(spy.prompts) >= 1 and spy.real.__class__.__name__ == "MockBackend"
+
+
+def test_the_backend_builds_the_model_argument_only_from_the_allowed_names():
+    backend = ClaudeCodeBackend("claude")
+    assert "--model" not in backend.build_args("system")
+    assert backend.build_args("system", "haiku")[-2:] == ["--model", "haiku"]
+    assert backend.build_args("system", "sonnet")[-2:] == ["--model", "sonnet"]
+    for bad in ("opus", "--tools", "haiku; rm -rf /", "claude-haiku-5-5"):
+        with pytest.raises(BackendError):
+            backend.build_args("system", bad)
+    configured = ClaudeCodeBackend("claude", "claude-sonnet-5-5")
+    assert configured.build_args("system")[-2:] == ["--model", "claude-sonnet-5-5"]  # the owner's own setting
+    assert configured.build_args("system", "haiku")[-2:] == ["--model", "haiku"]  # a per-question choice wins
+    assert set(CHAT_MODELS) == {"sonnet", "haiku"}

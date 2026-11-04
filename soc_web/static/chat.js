@@ -20,7 +20,7 @@
 
   function saveUi() {
     try {
-      sessionStorage.setItem(UI_KEY, JSON.stringify({ open: !panel.hidden, conversation: state.conversation }));
+      sessionStorage.setItem(UI_KEY, JSON.stringify({ open: !panel.hidden, conversation: state.conversation, model: chosenModel() }));
     } catch (e) { /* storage may be blocked; the panel then simply starts closed on each page */ }
   }
 
@@ -28,8 +28,19 @@
     try {
       var saved = JSON.parse(sessionStorage.getItem(UI_KEY) || "null");
       var id = saved && typeof saved.conversation === "number" ? saved.conversation : null;
-      return { open: !!(saved && saved.open === true), conversation: id };
-    } catch (e) { return { open: false, conversation: null }; }
+      return { open: !!(saved && saved.open === true), conversation: id, model: saved && typeof saved.model === "string" ? saved.model : "" };
+    } catch (e) { return { open: false, conversation: null, model: "" }; }
+  }
+
+  // The model switch (Sonnet or Haiku) only exists when the real assistant is on; "" means the page has none.
+  function chosenModel() {
+    var picked = panel.querySelector('input[name="chat-model"]:checked');
+    return picked ? picked.value : "";
+  }
+
+  function restoreModel(value) {
+    var radio = value ? panel.querySelector('input[name="chat-model"][value="' + value + '"]') : null;
+    if (radio) { radio.checked = true; }
   }
 
   function pendingBubble() {
@@ -250,7 +261,7 @@
     els.input.value = "";
     var waiting = pendingBubble();
     api("POST", "/chat/ask", {
-      question: question, conversation: state.conversation, path: currentPath(), use_page: attach
+      question: question, conversation: state.conversation, path: currentPath(), use_page: attach, model: chosenModel()
     }).then(function (data) {
       state.conversation = data.conversation.id;
       els.title.textContent = data.conversation.title;
@@ -268,6 +279,8 @@
 
   // Changing page reloads everything, so put the panel back as it was: open, on the same conversation.
   var ui = loadUi();
+  restoreModel(ui.model);
+  panel.addEventListener("change", function (ev) { if (ev.target.name === "chat-model") { saveUi(); } });
   if (ui.open) {
     panel.classList.add("restored");
     openPanel(true);

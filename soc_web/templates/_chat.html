@@ -20,6 +20,11 @@
       <div id="chat-log" class="chat-log" role="log" aria-live="polite"></div>
       <p class="chat-error" id="chat-error" role="alert" hidden></p>
       <label class="chat-ctx" for="chat-use-page"><input type="checkbox" id="chat-use-page" checked> <span id="chat-chip">using: this page</span></label>
+      {% if chat_models %}
+      <div class="chat-model" role="radiogroup" aria-label="Claude model for the next question">
+        {% for key, label in chat_models.items() %}<input type="radio" name="chat-model" id="chat-model-{{ key }}" value="{{ key }}"{% if loop.first %} checked{% endif %}><label for="chat-model-{{ key }}">{{ label }}</label>{% endfor %}
+      </div>
+      {% endif %}
       <form id="chat-form">
         <label for="chat-input" class="sr">Your question</label>
         <textarea id="chat-input" maxlength="500" rows="2" required placeholder="Ask about this page or the SOC"></textarea>

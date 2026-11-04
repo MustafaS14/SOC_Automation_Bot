@@ -15,6 +15,8 @@
     {% if current %}<input type="hidden" name="c" value="{{ current.id }}">{% endif %}
     <label for="question">Your question</label>
     <textarea id="question" name="question" maxlength="500" required>{{ question }}</textarea>
+    {% if chat_models %}<label for="model">Claude model</label>
+    <select id="model" name="model">{% for key, label in chat_models.items() %}<option value="{{ key }}"{% if key == model_choice %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>{% endif %}
     <p><button class="primary" type="submit">Ask</button></p>
   </form>
   <p class="muted">Read-only. You are asking at the <strong>{{ level_label[user.tier] }}</strong> level, so {% if user.tier < P.READ %}you get summaries without hostnames or IPs{% elif user.tier < P.RESPONSE %}you can see hosts, IPs and hunt results but not isolation previews or the audit log{% elif user.tier < P.ADMIN %}you can also preview what an isolation would do, but not see the audit log{% else %}you can ask about everything the assistant can see, including the audit log{% endif %}. It cannot change anything.</p>

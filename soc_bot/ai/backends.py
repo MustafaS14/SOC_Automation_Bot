@@ -23,6 +23,11 @@ class BackendError(RuntimeError):
     """The backend could not produce a reply. The text is for the log only, never for chat."""
 
 
+# The models a user may pick per question (Claude Code's own aliases). Only these two can ever reach the command line:
+# whatever else is asked for is refused, so a request cannot turn into an extra argument.
+CHAT_MODELS = {"sonnet": "Sonnet", "haiku": "Haiku"}
+
+
 class AiBackend(Protocol):
     async def complete(self, system: str, prompt: str) -> str: ...
 
@@ -53,7 +58,7 @@ class ClaudeCodeBackend:
         self._model = model
         self._timeout = timeout
 
-    def build_args(self, system: str) -> list[str]:
+    def build_args(self, system: str, model: str = "") -> list[str]:
         args = [
             self._command, "-p",
             "--system-prompt", system,
@@ -65,20 +70,22 @@ class ClaudeCodeBackend:
             "--no-session-persistence",
             "--output-format", "text",
         ]
-        if self._model:
-            args += ["--model", self._model]
+        if model and model not in CHAT_MODELS:
+            raise BackendError("unknown model")
+        if model or self._model:
+            args += ["--model", model or self._model]
         return args
 
     def build_env(self) -> dict[str, str]:
         return {k: os.environ[k] for k in _ENV_KEEP if k in os.environ}
 
-    async def complete(self, system: str, prompt: str) -> str:
+    async def complete(self, system: str, prompt: str, model: str = "") -> str:
         if shutil.which(self._command, path=os.environ.get("PATH")) is None:
             raise BackendError(f"{self._command!r} was not found on PATH")
         workdir = tempfile.mkdtemp(prefix="soc-ai-")
         try:
             proc = await asyncio.create_subprocess_exec(
-                *self.build_args(system),
+                *self.build_args(system, model),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -219,7 +226,7 @@ _SECRET_WORDS = ("password", "token", "secret", "credential", "api key", "privat
 class MockBackend:
     """A tiny rule-based stand-in so the whole flow can be tried without a model."""
 
-    async def complete(self, system: str, prompt: str) -> str:
+    async def complete(self, system: str, prompt: str, model: str = "") -> str:
         question = self._between(prompt, "<question>", "</question>").lower()
         tools = set(re.findall(r"^- (\w+)\(", prompt, re.MULTILINE))
         lookups = re.findall(r'<log_data tool="(\w+)"[^>]*>\n(.*?)\n</log_data>', prompt, re.DOTALL)
