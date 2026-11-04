@@ -40,6 +40,22 @@ The assistant's per-tool clearance is shared code with the bot. The page-level t
 
 **The mock assistant is scripted.** With `AI_BACKEND=mock` the assistant only matches keywords, and follow-ups like "explain that" get a fixed, labelled re-wording of the earlier answer ("scripted mock explanation, not a language model"). Real explanations need `AI_BACKEND=claude_code`.
 
+## The chat button
+
+Every signed-in page has a round button at the bottom right (not the sign-in page). It opens a slide-over chat with a list of your past conversations on the left; Escape or Close shuts it. The Ask page stays as the full-screen version and shows the same conversations. Without JavaScript the button is a plain link to the Ask page.
+
+![The chat button on the dashboard](screenshots/chat-button.png)
+
+![The chat panel on an incident, with the page it is using](screenshots/chat-widget.png)
+
+- **Same assistant, nothing new.** A question goes through `backends.assistant.ask`, so it uses whichever `AI_BACKEND` is set (the scripted mock for demos, or the `claude_code` relay). There is no new backend and no API key, and no new way for other users to reach the relay: the routes need a signed-in session and a CSRF token, and the assistant's own per-user hourly limit and daily budget apply. The assistant has no write tools, so nothing can be isolated, closed or commented from the chat.
+- **It sees the page you are on.** The chip under the conversation ("using: incident #10") says what is attached, and a checkbox turns it off. The browser sends only the address of the page; it never sends page text. The server rebuilds the context itself from the same data the page shows, for the same tier that may open it: the dashboard, the incident list (with its filters), one incident with its timeline, the last hunt result, the last enrichment result, and the audit rows (admins). Any other page sends only its name. A user below the page's tier gets no context at all. The context is capped at 3000 characters, run through the same secret redaction as the audit log, and contains no HTML.
+- **Page text is data, not instructions.** Incident descriptions and commands come from alerts and can hold attacker-controlled text. The context goes into the prompt inside `<page_context>` with `<` and `>` escaped so it cannot close the tag, and the system prompt says everything inside is data and never to be followed (it should be reported as suspicious instead).
+- **Conversations are kept.** Chats are stored in the console's own database, the same file as the accounts (`SOC_WEB_USERS_DB`, `web_users.db` by default, git-ignored), in the tables `chats` and `chat_messages`. They are the opposite of the short follow-up memory above: they are written to disk and survive a restart. They are never deleted, only renamed or archived (Archive, then "Show archived" to see them or Restore one). A conversation holds at most 60 messages, each message is cut at 4000 characters, and the title is taken from the first question. Secrets are redacted before anything is stored. Keep that file private: it now holds what people asked and what the assistant answered.
+- **Each conversation belongs to one user at one tier.** Lookups match both, so a user given a lower or higher tier starts with an empty list, and a lower tier never reads what a higher tier discussed. Moving back to the earlier tier brings the old list back. Nothing is kept in the browser (no localStorage), and the script writes text only with `textContent`, never as HTML.
+- **Audit.** A new conversation is `chat.new`; renaming and archiving are `chat.rename`, `chat.archive` and `chat.unarchive`; every question is the usual `ai.ask` entry with `page` (what was attached), `conversation` and `via` (`widget` or `ask`).
+- **The round button's picture.** If `soc_web/static/bot-avatar.png` exists the button shows it (use the Discord bot's avatar, unchanged); otherwise it shows the letters "AI".
+
 **How answers are shown.** On the Ask page the assistant's answer is laid out as a titled card of labelled rows (severity as a badge, "none" instead of `n/a`), a table when there are several rows (hunt results, incident lists), and a separate block for Confidence and Not checked. Free-form text from a real model stays as paragraphs. Below it, a box called **In plain words** shows 2 or 3 non-technical sentences. The assistant's prompt asks for that part after "Not checked:", and never on a refusal, so refusals stay word for word. The parsing lives in `soc_web/answers.py`. The prompt change is in `soc_bot/ai/prompt.py`, so Discord answers carry the same "In plain words:" paragraph, as plain text.
 
 ![Incident page with its timeline](screenshots/incident.png)
@@ -83,7 +99,7 @@ Settings (all optional except the secret key; see `.env.example`):
 - **Sessions** are signed cookies: `HttpOnly`, `SameSite=Lax`, `Secure` unless `SOC_WEB_SECURE_COOKIES=false`, and renewed at every sign-in. The user's tier is read from the database on every request, so disabling an account or lowering a tier applies at once. Each account has a session counter carried in the cookie: signing out, changing the password or disabling the account bumps it, so a copied cookie stops working at once instead of at its expiry. (Signing out therefore ends that user's sessions in every browser.)
 - **Host header:** requests whose `Host` is not in the allowed list are refused (see settings).
 - **CSRF:** every POST needs a per-session token.
-- **Content Security Policy** allows no scripts at all and no inline styles, and the pages contain none. Alert text, comments and Splunk rows are untrusted, and Jinja escapes them. An alert link is only shown as a link if it is `http` or `https`.
+- **Content Security Policy** allows no inline styles and no inline scripts. The sign-in page allows no script at all. Signed-in pages allow exactly one, `static/chat.js` from this site (`script-src 'self'`), which may talk only to this site (`connect-src 'self'`); no `unsafe-inline`, no `eval`, nothing from elsewhere. Alert text, comments and Splunk rows are untrusted, and Jinja escapes them. An alert link is only shown as a link if it is `http` or `https`.
 - **Account changes** made with `python -m soc_web user ...` are written to the audit log as `account.create`, `account.passwd`, `account.tier`, `account.disable`, `account.enable` (channel `cli`, actor `cli:<operating-system user>`); failed sign-ins and lockouts appear as `auth.login` denied.
 - **Secrets in free text** (API keys, tokens, JWTs, `password=...`, long hex strings) are replaced by `[redacted]` before anything is written to the audit log or sent to Splunk. This is a safety net, not a guarantee.
 - **Audit:** every incident list or detail view, change, hunt, enrichment, question and audit view is written to the audit log with `channel: web` and the client address, and forwarded to Splunk HEC when that is configured. Failed sign-ins are logged with the typed username but never the password.
@@ -109,9 +125,12 @@ soc_web/
 ├── status.py        # background Splunk probe for the status strip
 ├── answers.py       # lays the assistant's answer out as cards and tables
 ├── users.py         # accounts: hashing, tiers, lockout
-├── templates/       # Jinja pages (no JavaScript)
+├── conversations.py # chat conversations, kept per user and tier
+├── pagecontext.py   # what the chat button tells the assistant about the current page
+├── templates/       # Jinja pages (JavaScript only in the chat button)
 └── static/
     ├── style.css    # the space-UI theme: pure CSS, including the planet
+    ├── chat.js      # the chat button and panel (the only script)
     └── fonts/       # Orbitron and Exo 2, self-hosted, with their SIL Open Font License files
 ```
 
@@ -121,10 +140,12 @@ A retro space-UI theme: cream, teal and orange on charcoal, ridged menu tabs for
 
 It is cosmetic. Tier names are shown as ranks (Cadet, Scout, Pilot, Guardian, Commander for VIEWER up to ADMIN), the threat level comes from the worst severity still open, and severities get star ratings. None of it changes what a tier may do.
 
-It is built to fit the security policy: no JavaScript, no inline styles and no outside fonts, so the policy still reads `default-src 'none'` with `style-src 'self'` and `font-src 'self'`. The planet is drawn in CSS. Orbits stop turning when the browser asks for reduced motion.
+It is built to fit the security policy: no inline styles, no inline scripts and no outside fonts, so the policy still reads `default-src 'none'` with `style-src 'self'` and `font-src 'self'`, plus `script-src 'self'` for the chat button on signed-in pages. The planet is drawn in CSS. Orbits stop turning when the browser asks for reduced motion.
 
 ## Known limits
 
+- **Chats are stored in plain text** in the console's database (secrets are redacted first, which is a safety net, not a guarantee). There is no delete button on purpose; to remove a chat, an administrator edits the database. The conversation list is hidden on very narrow screens.
+- **With the mock backend the page reading is scripted.** "What am I looking at on this page?" gets a fixed, labelled summary of the attached context. A real explanation needs `AI_BACKEND=claude_code`, which has not been tried with page context yet.
 - **The audit file has no tamper evidence** (no hash chain); the Splunk copy is the one to trust (see above). Searching reads the whole file, which is fine for a lab and slow for a log of many gigabytes.
 - **Acknowledgements in the timeline** come from the audit log, because the incident store keeps no status history. Acknowledgements from Discord and from the console both appear, but one made before the audit log existed, or after it was deleted or rotated away, is missing.
 - **The sign-in rate limit is kept in memory**, so it resets when the server restarts. Account lockouts are stored and survive restarts.
