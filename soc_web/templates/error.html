@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% from "_macros.html" import system %}
+{% block title %}Error {{ code }} - SOC Console{% endblock %}
+{% block content %}
+<div class="panel gameover">
+  {{ system({'High': 1}) }}
+  <p class="big">{% if code == 403 %}Access denied{% elif code == 404 %}Planet not found{% elif code == 429 %}Slow down{% else %}Signal lost{% endif %}</p>
+  <p class="code">Error {{ code }}</p>
+  <p>{{ message }}</p>
+  <p><a class="btn" href="{{ url_for('dashboard') if user else url_for('login') }}">Back</a></p>
+</div>
+{% endblock %}

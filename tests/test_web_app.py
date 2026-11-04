@@ -1,0 +1,613 @@
+import json
+from pathlib import Path
+
+import pytest
+
+from .web_helpers import PASSWORD, login, post, stack, token  # noqa: F401
+
+
+def test_login_required_everywhere(stack):
+    app, _, _ = stack
+    client = app.test_client()
+    for path in ("/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/ask", "/audit"):
+        resp = client.get(path)
+        assert resp.status_code == 302 and "/login" in resp.headers["Location"], path
+
+
+def test_login_success_and_wrong_password(stack):
+    app, _, _ = stack
+    client, resp = login(app, "triage")
+    assert resp.status_code == 302
+    assert client.get("/").status_code == 200
+
+    _, bad = login(app, "triage", "wrong password here")
+    assert bad.status_code == 401
+    assert b"Wrong username or password" in bad.data
+
+
+def test_login_error_does_not_reveal_which_part_was_wrong(stack):
+    app, _, _ = stack
+    _, unknown = login(app, "nobody", PASSWORD)
+    _, wrong = login(app, "triage", "nope nope nope nope")
+    assert unknown.status_code == wrong.status_code == 401
+    assert unknown.data == wrong.data or (b"Wrong username or password" in unknown.data and b"Wrong username or password" in wrong.data)
+
+
+def test_account_locks_after_repeated_failures(stack):
+    app, _, _ = stack
+    for _ in range(3):
+        login(app, "read", "bad password here")
+    _, resp = login(app, "read", PASSWORD)  # even the right password is refused while locked
+    assert resp.status_code == 401
+
+
+def test_post_without_csrf_token_is_rejected(stack):
+    app, _, _ = stack
+    client, _ = login(app, "triage")
+    resp = client.post("/incidents/1/comment", data={"message": "hi"})
+    assert resp.status_code == 400
+    resp = client.post("/incidents/1/comment", data={"message": "hi", "csrf_token": "forged"})
+    assert resp.status_code == 400
+
+
+def test_login_form_needs_csrf_token(stack):
+    app, _, _ = stack
+    resp = app.test_client().post("/login", data={"username": "triage", "password": PASSWORD})
+    assert resp.status_code == 400
+
+
+def test_logout_ends_the_session(stack):
+    app, _, _ = stack
+    client, _ = login(app, "triage")
+    assert post(client, "/logout", "/").status_code == 302
+    assert client.get("/").status_code == 302
+
+
+def test_disabled_user_is_signed_out_on_next_request(stack):
+    app, _, users = stack
+    client, _ = login(app, "triage")
+    users.set_active("triage", False)
+    assert client.get("/").status_code == 302
+
+
+def test_tier_change_applies_to_existing_session(stack):
+    app, _, users = stack
+    client, _ = login(app, "triage")
+    assert client.get("/incidents").status_code == 200
+    users.set_tier("triage", "viewer")
+    assert client.get("/incidents").status_code == 403
+
+
+@pytest.mark.parametrize(
+    "tier,path,expected",
+    [
+        ("viewer", "/", 200), ("viewer", "/ask", 200), ("viewer", "/incidents", 403),
+        ("viewer", "/hunt", 403), ("viewer", "/enrich", 403), ("viewer", "/audit", 403),
+        ("read", "/incidents", 200), ("read", "/hunt", 200), ("read", "/enrich", 200), ("read", "/audit", 403),
+        ("triage", "/audit", 403), ("admin", "/audit", 200),
+    ],
+)
+def test_page_access_by_tier(stack, tier, path, expected):
+    app, _, _ = stack
+    client, _ = login(app, tier)
+    assert client.get(path).status_code == expected
+
+
+def test_viewer_dashboard_shows_counts_but_no_incident_list(stack):
+    app, _, _ = stack
+    client, _ = login(app, "viewer")
+    html = client.get("/").get_data(as_text=True)
+    assert "Open incidents" in html
+    assert "soc-victim" not in html and "Suspicious discovery" not in html
+
+
+def test_read_tier_cannot_change_incidents(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "read")
+    for path, data in (
+        ("/incidents/1/ack", {}),
+        ("/incidents/1/comment", {"message": "hello"}),
+        ("/incidents/1/close", {"classification": "benign", "comment": "fine", "step": "confirm"}),
+    ):
+        assert post(client, path, "/incidents", **data).status_code == 403, path
+    inc = backends.runner.run(backends.store.get(1))
+    assert inc.status == "New" and not inc.comments
+
+
+def test_incident_list_and_filters(stack):
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    html = client.get("/incidents?status=open").get_data(as_text=True)
+    assert "Suspicious discovery commands" in html and "Cron job anomaly" not in html
+    html = client.get("/incidents?status=closed").get_data(as_text=True)
+    assert "Cron job anomaly" in html
+    # Junk filter values fall back to defaults instead of reaching the store.
+    assert client.get("/incidents?status=%27%3BDROP&severity=x&limit=abc").status_code == 200
+
+
+def test_missing_incident_is_404(stack):
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    assert client.get("/incidents/9999").status_code == 404
+
+
+def test_acknowledge_comment_and_audit(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "triage")
+    assert post(client, "/incidents/1/ack", "/incidents/1").status_code == 302
+    assert post(client, "/incidents/1/comment", "/incidents/1", message="Looks like recon").status_code == 302
+    inc = backends.runner.run(backends.store.get(1))
+    assert inc.status == "Active" and inc.assignee == "triage@web"
+    assert inc.comments[-1].author == "triage@web" and inc.comments[-1].body == "Looks like recon"
+    backends.audit_log.close()
+    lines = [json.loads(line) for line in Path(backends.settings.audit_log_path).read_text(encoding="utf-8").splitlines()]
+    actions = {(e["action"], e["actor"], e["channel"]) for e in lines}
+    assert ("incident.ack", "triage", "web") in actions and ("incident.comment", "triage", "web") in actions
+
+
+def test_comment_is_escaped_not_executed(stack):
+    app, backends, _ = stack
+    backends.runner.run(backends.store.add_comment(1, "splunk", "<script>alert(1)</script>"))
+    client, _ = login(app, "read")
+    html = client.get("/incidents/1").get_data(as_text=True)
+    assert "<script>alert(1)</script>" not in html
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+
+def test_alert_link_must_be_http(stack):
+    app, backends, _ = stack
+    inc = backends.runner.run(backends.store.create(rule="r", severity="Low", url="javascript:alert(1)"))
+    client, _ = login(app, "read")
+    assert "javascript:" not in client.get(f"/incidents/{inc.id}").get_data(as_text=True)
+    ok = backends.runner.run(backends.store.create(rule="r", severity="Low", url="https://splunk.lab:8000/a"))
+    assert "https://splunk.lab:8000/a" in client.get(f"/incidents/{ok.id}").get_data(as_text=True)
+
+
+def test_empty_comment_rejected(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "triage")
+    post(client, "/incidents/1/comment", "/incidents/1", message="   ")
+    assert backends.runner.run(backends.store.get(1)).comments == []
+
+
+def test_close_needs_a_second_confirming_post(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "triage")
+    data = {"classification": "false_positive", "comment": "Scheduled scan"}
+    review = post(client, "/incidents/1/close", "/incidents/1", **data)
+    assert review.status_code == 200 and b"Close incident #1?" in review.data
+    assert backends.runner.run(backends.store.get(1)).status == "New"
+
+    done = post(client, "/incidents/1/close", "/incidents/1", step="confirm", **data)
+    assert done.status_code == 302
+    inc = backends.runner.run(backends.store.get(1))
+    assert inc.status == "Closed" and inc.classification == "false_positive"
+    assert "Scheduled scan" in inc.comments[-1].body
+
+
+def test_close_rejects_bad_classification_and_short_reason(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "triage")
+    post(client, "/incidents/1/close", "/incidents/1", classification="whatever", comment="a reason", step="confirm")
+    post(client, "/incidents/1/close", "/incidents/1", classification="benign", comment="x", step="confirm")
+    assert backends.runner.run(backends.store.get(1)).status == "New"
+
+
+def test_closing_twice_reports_instead_of_crashing(stack):
+    app, _, _ = stack
+    client, _ = login(app, "triage")
+    data = {"classification": "benign", "comment": "fine", "step": "confirm"}
+    post(client, "/incidents/1/close", "/incidents/1", **data)
+    again = post(client, "/incidents/1/close", "/incidents/1", **data)
+    assert again.status_code == 302
+    assert b"already closed" in client.get("/incidents/1").data
+
+
+def test_enrich_form_and_incident_link(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "read")
+    resp = post(client, "/enrich", "/enrich", ip="185.220.101.4", incident="2")
+    assert resp.status_code == 200 and b"Malicious" in resp.data
+    assert "IP enrichment 185.220.101.4" in backends.runner.run(backends.store.get(2)).comments[-1].body
+
+
+def test_enrich_button_on_incident_uses_its_source_ip(stack):
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    resp = post(client, "/incidents/2/enrich", "/incidents/2")
+    assert resp.status_code == 200 and b"185.220.101.4" in resp.data
+
+
+def test_enrich_rejects_junk_ip(stack):
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    resp = post(client, "/enrich", "/enrich", ip="not-an-ip; rm -rf /")
+    assert resp.status_code == 302
+    assert b"not a valid IPv4/IPv6" in client.get("/enrich").data
+
+
+def test_enrich_private_ip_is_internal(stack):
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    assert b"Internal" in post(client, "/enrich", "/enrich", ip="192.168.56.20").data
+
+
+def test_hunt_runs_template_and_validates_target(stack):
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    ok = post(client, "/hunt", "/hunt", template="host_commands", window="1h", target="soc-victim")
+    assert ok.status_code == 200 and b"whoami" in ok.data
+    bad = post(client, "/hunt", "/hunt", template="host_commands", window="1h", target='x" | delete')
+    assert b"whoami" not in bad.data
+    unknown = post(client, "/hunt", "/hunt", template="../etc", window="1h", target="")
+    assert b"Unknown hunt template" in unknown.data
+
+
+def test_ask_answers_at_the_users_level(stack):
+    app, _, _ = stack
+    client, _ = login(app, "viewer")
+    resp = post(client, "/ask", "/ask", question="How many incidents are open?")
+    assert resp.status_code == 200 and b"Answer" in resp.data
+
+
+def test_ask_requires_a_question(stack):
+    app, _, _ = stack
+    client, _ = login(app, "viewer")
+    assert b"Ask a question first" in post(client, "/ask", "/ask", question="   ").data
+
+
+def test_audit_page_lists_entries_for_admin(stack):
+    app, _, _ = stack
+    client, _ = login(app, "admin")
+    client.get("/incidents")
+    html = client.get("/audit").get_data(as_text=True)
+    assert "incident.list" in html and "auth.login" in html
+
+
+def test_failed_login_is_audited_without_the_password(stack):
+    app, backends, _ = stack
+    login(app, "triage", "hunter2 hunter2 hunter2")
+    backends.audit_log.close()
+    text = Path(backends.settings.audit_log_path).read_text(encoding="utf-8")
+    assert '"outcome": "denied"' in text and "hunter2" not in text
+
+
+def test_security_headers(stack):
+    app, _, _ = stack
+    resp = app.test_client().get("/login")
+    assert "default-src 'none'" in resp.headers["Content-Security-Policy"]
+    assert "script-src" not in resp.headers["Content-Security-Policy"]  # no scripts are allowed at all
+    assert resp.headers["X-Frame-Options"] == "DENY"
+    assert resp.headers["Cache-Control"] == "no-store"
+    assert "inline" not in resp.get_data(as_text=True).lower() and "<script" not in resp.get_data(as_text=True)
+
+
+def test_session_cookie_flags(stack):
+    app, _, _ = stack
+    client = app.test_client()
+    page = client.get("/login")
+    resp = client.post("/login", data={"username": "triage", "password": PASSWORD, "csrf_token": token(page.get_data(as_text=True))})
+    cookie = resp.headers["Set-Cookie"]
+    assert "HttpOnly" in cookie and "SameSite=Lax" in cookie
+
+
+def test_login_attempts_are_throttled_per_address(stack):
+    app, _, _ = stack
+    client = app.test_client()
+    page = client.get("/login").get_data(as_text=True)
+    codes = [client.post("/login", data={"username": "ghost", "password": "x" * 14, "csrf_token": token(page)}).status_code
+             for _ in range(25)]
+    assert 429 in codes and codes[0] == 401
+
+
+# ---- space-UI theme: ranks, threat level, self-hosted fonts, nothing inline ----
+
+@pytest.mark.parametrize(
+    "open_by_severity,expected",
+    [
+        ({}, ("clear", 1)),
+        ({"Informational": 2}, ("guarded", 2)),
+        ({"Low": 1}, ("guarded", 2)),
+        ({"Low": 1, "Medium": 1}, ("elevated", 3)),
+        ({"Medium": 1, "High": 1, "Low": 4}, ("critical", 4)),
+        ({"High": 0, "Medium": 0}, ("clear", 1)),  # zero counts do not raise the level
+    ],
+)
+def test_threat_level_follows_the_worst_open_severity(open_by_severity, expected):
+    from soc_web.app import threat_level
+
+    level, steps, reason = threat_level(open_by_severity)
+    assert (level, steps) == expected and reason
+
+
+def test_rank_names_cover_every_tier_and_show_in_the_header(stack):
+    from soc_bot.rbac import Permission
+    from soc_web.app import RANKS
+
+    assert set(RANKS) == set(Permission)
+    for tier, rank in (("viewer", "Cadet"), ("read", "Scout"), ("triage", "Pilot"), ("admin", "Commander")):
+        client, _ = login(stack[0], tier)
+        assert rank in client.get("/").get_data(as_text=True)
+
+
+def test_dashboard_shows_threat_level_and_clears_when_nothing_is_open(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "read")
+    html = client.get("/").get_data(as_text=True)
+    assert "CRITICAL" in html and "High-severity incidents are open" in html  # the seeded High incident
+    for incident_id in (1, 2, 3, 4):
+        backends.runner.run(backends.store.close(incident_id, "benign", "test", "t"))
+    html = client.get("/").get_data(as_text=True)
+    assert "All clear" in html and ">CLEAR<" in html  # the heading is uppercased by CSS
+
+
+def test_fonts_are_self_hosted_and_allowed_by_the_csp(stack):
+    app, _, _ = stack
+    client = app.test_client()
+    for name in ("Orbitron.ttf", "Exo2.ttf"):
+        resp = client.get(f"/static/fonts/{name}")
+        assert resp.status_code == 200 and resp.data[:4] == b"\x00\x01\x00\x00"
+    csp = client.get("/login").headers["Content-Security-Policy"]
+    assert "font-src 'self'" in csp
+    assert "http" not in csp and "script-src" not in csp  # still nothing from outside, still no scripts
+
+
+def test_no_page_uses_inline_styles_or_scripts(stack):
+    app, _, _ = stack
+    client, _ = login(app, "admin")
+    for path in ("/", "/incidents", "/incidents/2", "/hunt", "/enrich", "/ask", "/audit", "/nope"):
+        html = client.get(path).get_data(as_text=True)
+        assert " style=" not in html and "<script" not in html and " onclick=" not in html, path
+    assert " style=" not in app.test_client().get("/login").get_data(as_text=True)
+
+
+def test_ask_shows_a_plain_words_box_separate_from_the_technical_answer(stack):
+    app, _, _ = stack
+    client, _ = login(app, "viewer")
+    html = post(client, "/ask", "/ask", question="summarize incident 1").get_data(as_text=True)
+    answer_part, _, plain_part = html.partition('class="panel plain"')
+    assert "In plain words" in plain_part and "monitoring system" in plain_part
+    assert "Not checked" in answer_part                       # the technical answer is in its own box
+    assert "In plain words:" not in answer_part               # the marker itself is not left in it
+
+
+def test_ask_shows_no_plain_words_box_for_a_refusal(stack):
+    app, _, _ = stack
+    client, _ = login(app, "viewer")
+    html = post(client, "/ask", "/ask", question="What's the weather tomorrow?").get_data(as_text=True)
+    assert "I can only help with this SOC" in html and 'class="panel plain"' not in html
+
+
+def test_logout_revokes_a_copied_session_cookie(stack):
+    app, _, _ = stack
+    client, _ = login(app, "triage")
+    cookie = client.get_cookie("soc_session").value
+    post(client, "/logout", "/")
+    thief = app.test_client()
+    thief.set_cookie("soc_session", cookie)
+    assert thief.get("/").status_code == 302
+
+
+def test_password_change_signs_out_existing_sessions(stack):
+    app, _, users = stack
+    client, _ = login(app, "triage")
+    users.set_password("triage", "a brand new password")
+    assert client.get("/").status_code == 302
+    _, resp = login(app, "triage", "a brand new password")
+    assert resp.status_code == 302
+
+
+def test_logout_leaves_other_users_signed_in(stack):
+    app, _, _ = stack
+    a, _ = login(app, "triage")
+    b, _ = login(app, "read")
+    post(a, "/logout", "/")
+    assert b.get("/").status_code == 200
+
+
+def test_host_header_outside_the_allowed_list_is_refused(stack):
+    import dataclasses
+
+    from soc_web.app import create_app
+
+    app, backends, users = stack
+    web = dataclasses.replace(app.config["WEB"], allowed_hosts=("localhost", "console.lab"))
+    strict = create_app(web, backends, users)
+    assert strict.test_client().get("/login", headers={"Host": "console.lab:8000"}).status_code == 200
+    assert strict.test_client().get("/login", headers={"Host": "LOCALHOST"}).status_code == 200
+    assert strict.test_client().get("/login", headers={"Host": "evil.example"}).status_code == 400
+
+
+def test_forwarded_address_is_trusted_only_when_a_proxy_is_declared(stack):
+    import dataclasses
+
+    from soc_web.app import create_app
+
+    app, backends, users = stack
+    proxied = create_app(dataclasses.replace(app.config["WEB"], trusted_proxies=1), backends, users)
+    for each in (app, proxied):
+        client = each.test_client()
+        page = client.get("/login").get_data(as_text=True)
+        client.post("/login", data={"username": "nobody", "password": "x" * 12, "csrf_token": token(page)},
+                    headers={"X-Forwarded-For": "6.6.6.6"})
+    backends.audit_log.close()
+    ips = [json.loads(line)["ip"] for line in Path(backends.settings.audit_log_path).read_text(encoding="utf-8").splitlines()]
+    assert ips == ["127.0.0.1", "6.6.6.6"]
+
+
+def _seed_audit(backends, entries):
+    with open(backends.settings.audit_log_path, "a", encoding="utf-8") as f:
+        f.writelines(json.dumps(e) + "\n" for e in entries)
+
+
+def _entry(i, **over):
+    e = {"ts": f"2026-03-{1 + i % 28:02d}T10:00:00+00:00", "actor": "alice", "actor_id": 1,
+         "action": "incident.show", "target": f"#{i}", "outcome": "success", "channel": "web", "ip": "127.0.0.1"}
+    return {**e, **over}
+
+
+def test_audit_page_is_paged_fifty_newest_first(stack):
+    app, backends, _ = stack
+    _seed_audit(backends, [_entry(i, actor=f"user{i:03d}") for i in range(120)])
+    client, _ = login(app, "admin")
+    first = client.get("/audit").get_data(as_text=True)
+    assert "user119" in first and "user075" in first and "user060" not in first and "user000" not in first
+    assert "page 1 of 3" in first and "Older" in first and "Newer" not in first
+    last = client.get("/audit?page=3").get_data(as_text=True)
+    assert "user000" in last and "Older" not in last and "Newer" in last
+
+
+@pytest.mark.parametrize("query, present, absent", [
+    ("actor=BOB", "bob-entry", "alice-entry"),
+    ("action=incident.close", "close-entry", "alice-entry"),
+    ("outcome=denied", "denied-entry", "alice-entry"),
+    ("channel=discord", "discord-entry", "alice-entry"),
+    ("since=2026-04-01", "april-entry", "alice-entry"),
+    ("until=2026-02-28", "feb-entry", "alice-entry"),
+    ("denied=1", "ai-refused", "alice-entry"),
+])
+def test_audit_filters(stack, query, present, absent):
+    app, backends, _ = stack
+    _seed_audit(backends, [
+        _entry(1, target="alice-entry"),
+        _entry(2, actor="bob", target="bob-entry"),
+        _entry(3, action="incident.close", target="close-entry"),
+        _entry(4, outcome="denied", target="denied-entry"),
+        _entry(5, channel=None, target="discord-entry"),
+        _entry(6, ts="2026-04-05T10:00:00+00:00", target="april-entry"),
+        _entry(7, ts="2026-02-05T10:00:00+00:00", target="feb-entry"),
+        _entry(8, action="ai.ask", denied=True, target="ai-refused"),
+    ])
+    client, _ = login(app, "admin")
+    html = client.get(f"/audit?{query}").get_data(as_text=True)
+    assert present in html and absent not in html
+
+
+def test_audit_rows_link_to_incidents_and_explain_ai_questions(stack):
+    app, backends, _ = stack
+    _seed_audit(backends, [
+        _entry(1, action="incident.close", target="#7", classification="Benign"),
+        _entry(2, action="enrich.ip", target="203.0.113.9", incident=4),
+        _entry(3, action="ai.ask", target="Analyst", tools="search_incidents,get_incident", denied=True, calls=2),
+    ])
+    html = login(app, "admin")[0].get("/audit").get_data(as_text=True)
+    assert 'href="/incidents/7"' in html and 'href="/incidents/4"' in html
+    assert "asked at this level" in html and "search_incidents,get_incident" in html
+    assert "something was refused" in html
+
+
+def test_audit_filter_input_is_escaped_and_bad_values_ignored(stack):
+    app, _, _ = stack
+    client, _ = login(app, "admin")
+    resp = client.get('/audit?actor="><script>alert(1)</script>&since=not-a-date&page=abc&outcome=bogus')
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 200 and "<script>alert(1)" not in html
+    assert "page 1 of" in html
+
+
+def test_audit_page_says_which_copy_is_authoritative(stack):
+    app, _, _ = stack
+    html = login(app, "admin")[0].get("/audit").get_data(as_text=True)
+    assert "not</strong> forwarded to Splunk" in html
+
+
+def test_audit_page_is_closed_to_other_tiers(stack):
+    app, _, _ = stack
+    for tier in ("viewer", "read", "triage"):
+        assert login(app, tier)[0].get("/audit").status_code == 403
+
+
+def test_incident_timeline_orders_alert_ack_notes_and_close(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "triage")
+    inc = backends.runner.run(backends.store.create(rule="Timeline rule", severity="High", host="h1", src_ip="203.0.113.9"))
+    post(client, f"/incidents/{inc.id}/ack", f"/incidents/{inc.id}")
+    backends.runner.run(backends.store.add_comment(inc.id, "triage-assistant", "Likely brute force, T1110."))
+    backends.runner.run(backends.store.add_comment(inc.id, "bob@discord", "IP enrichment 203.0.113.9: verdict Malicious"))
+    post(client, f"/incidents/{inc.id}/comment", f"/incidents/{inc.id}", message="Looking at it")
+    post(client, f"/incidents/{inc.id}/close", f"/incidents/{inc.id}", classification="true_positive",
+         comment="Confirmed", step="confirm")
+    backends.audit_log.close()  # flush the queued audit lines to the file the page reads
+    html = client.get(f"/incidents/{inc.id}").get_data(as_text=True)
+    order = ["Alert raised", "Acknowledged", "AI triage note", "IP enrichment", "Comment", "Closed"]
+    positions = [html.index(f"<strong>{label}</strong>") for label in order]
+    assert positions == sorted(positions)
+
+
+def test_timeline_escapes_comment_text(stack):
+    app, _, _ = stack
+    client, _ = login(app, "triage")
+    post(client, "/incidents/1/comment", "/incidents/1", message="<img src=x onerror=alert(1)>")
+    html = client.get("/incidents/1").get_data(as_text=True)
+    assert "<img src=x" not in html and "&lt;img src=x" in html
+
+
+def test_ask_shows_level_and_examples_that_fit_it(stack):
+    app, _, _ = stack
+    viewer = login(app, "viewer")[0].get("/ask").get_data(as_text=True)
+    assert "<strong>Viewer</strong>" in viewer and "without hostnames or IPs" in viewer
+    assert "Which host is affected by incident 1?" in viewer and "audit log record" not in viewer
+    admin = login(app, "admin")[0].get("/ask").get_data(as_text=True)
+    assert "<strong>Admin</strong>" in admin and "audit log record" in admin
+
+
+def test_example_link_fills_the_box_without_asking(stack):
+    app, _backends, _ = stack
+    client, _ = login(app, "viewer")
+    html = client.get('/ask?q=How%20many%20incidents%3F%22%3E%3Cscript%3E').get_data(as_text=True)
+    assert "How many incidents?&#34;&gt;&lt;script&gt;" in html and "<script>" not in html
+    assert "<h2>Answer</h2>" not in html
+
+
+def test_refusals_get_their_own_panel(stack):
+    app, _, _ = stack
+    client, _ = login(app, "viewer")
+    clearance = post(client, "/ask", "/ask", question="Which host is affected by incident 1?").get_data(as_text=True)
+    assert 'class="panel refusal"' in clearance and "Not allowed at your level" in clearance
+    assert "outside your clearance level" in clearance and "<h2>Answer</h2>" not in clearance
+    off_topic = post(client, "/ask", "/ask", question="What's the weather tomorrow?").get_data(as_text=True)
+    assert 'class="panel refusal"' in off_topic and "Not something I can help with" in off_topic
+    ok = post(client, "/ask", "/ask", question="How many incidents are open?").get_data(as_text=True)
+    assert 'class="panel refusal"' not in ok and "<h2>Answer</h2>" in ok
+
+
+def _positions(html, *needles):
+    return [html.index(n) for n in needles]
+
+
+def test_incident_list_sorts_by_the_chosen_order(stack):
+    app, backends, _ = stack
+    client, _ = login(app, "read")
+    rows = backends.runner.run(backends.store.list("all", None, 50))
+    ids = [i.id for i in rows]  # newest first
+    links = [f'href="/incidents/{i}"' for i in ids]
+    newest = client.get("/incidents?status=all&order=newest").get_data(as_text=True)
+    oldest = client.get("/incidents?status=all&order=oldest").get_data(as_text=True)
+    assert _positions(newest, *links) == sorted(_positions(newest, *links))
+    assert _positions(oldest, *links) == sorted(_positions(oldest, *links), reverse=True)
+
+    severity = client.get("/incidents?status=all&order=severity").get_data(as_text=True)
+    first_link = min(severity.index(link) for link in links)
+    first_id = next(i for i, link in zip(ids, links) if severity.index(link) == first_link)
+    assert next(i for i in rows if i.id == first_id).severity == "High"
+
+
+def test_unknown_sort_falls_back_and_is_audited_as_chosen(stack):
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    html = client.get("/incidents?order=%27%3BDROP%20TABLE").get_data(as_text=True)
+    assert 'value="newest" selected' in html
+
+
+def test_empty_incident_list_explains_what_to_do(stack):
+    app, backends, _ = stack
+
+    async def none(*args, **kwargs):
+        return []
+
+    backends.store.list = none
+    client, _ = login(app, "read")
+    html = client.get("/incidents").get_data(as_text=True)
+    assert "No open incidents. New ones appear here when Splunk sends an alert to the bot." in html
+    filtered = client.get("/incidents?status=closed&severity=High").get_data(as_text=True)
+    assert "No incidents match these filters" in filtered and "Clear the filters" in filtered

@@ -1,0 +1,33 @@
+# Sample unit for the Discord bot. Placeholders: the user, the paths and the credential list. See README.md here.
+[Unit]
+Description=SOC Automation Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=soc
+Group=soc
+WorkingDirectory=/opt/soc-bot
+# Non-secret settings only (ports, paths, role and channel IDs). No tokens in this file.
+EnvironmentFile=/etc/soc/soc.env
+# One line per secret. systemd gives the service a private copy in $CREDENTIALS_DIRECTORY (read-only, this
+# service only). The file name is the setting name in lower case: discord_token is read as DISCORD_TOKEN.
+# A listed file that does not exist stops the service from starting, so list only the ones you created.
+LoadCredential=discord_token:/etc/soc/credentials/discord_token
+LoadCredential=webhook_secret:/etc/soc/credentials/webhook_secret
+LoadCredential=splunk_token:/etc/soc/credentials/splunk_token
+LoadCredential=splunk_hec_token:/etc/soc/credentials/splunk_hec_token
+LoadCredential=abuseipdb_api_key:/etc/soc/credentials/abuseipdb_api_key
+LoadCredential=virustotal_api_key:/etc/soc/credentials/virustotal_api_key
+ExecStart=/opt/soc-bot/.venv/bin/python -m soc_bot
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# The bot writes its incident database and audit log; point DB_PATH and AUDIT_LOG_PATH under this directory.
+ReadWritePaths=/var/lib/soc
+
+[Install]
+WantedBy=multi-user.target

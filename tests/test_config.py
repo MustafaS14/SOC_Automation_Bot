@@ -2,11 +2,11 @@ import pytest
 
 from soc_bot.config import ConfigError, Settings
 
-BASE = dict(
-    discord_token="t", guild_id=None, allowed_channel_ids=frozenset({1}), audit_channel_id=None,
-    read_role_ids=frozenset({1}), triage_role_ids=frozenset(), response_role_ids=frozenset(),
-    isolation_denylist=(), mock_mode=False, webhook_secret="s",
-)
+BASE = {
+    "discord_token": "t", "guild_id": None, "allowed_channel_ids": frozenset({1}), "audit_channel_id": None,
+    "read_role_ids": frozenset({1}), "triage_role_ids": frozenset(), "response_role_ids": frozenset(),
+    "isolation_denylist": (), "mock_mode": False, "webhook_secret": "s",
+}
 
 
 def test_valid_minimal_config():
@@ -178,3 +178,74 @@ def test_ai_defaults_are_off(monkeypatch):
     assert Settings.from_env().ai_backend == "off"
     monkeypatch.setenv("SOC_BOT_MOCK", "true")
     assert Settings.from_env().ai_backend == "mock"
+
+
+def test_unresolved_1password_reference_is_refused(monkeypatch):
+    from soc_bot.config import reject_unresolved_references
+
+    monkeypatch.setenv("DISCORD_TOKEN", "op://SOC-Lab/discord/token")
+    monkeypatch.setenv("SPLUNK_TOKEN", "  op://SOC-Lab/splunk/token")
+    with pytest.raises(ConfigError) as exc:
+        reject_unresolved_references()
+    message = str(exc.value)
+    assert "DISCORD_TOKEN" in message and "SPLUNK_TOKEN" in message and "op run" in message
+    assert "SOC-Lab" not in message  # names the variables, never echoes the references
+
+
+def test_real_values_pass_the_reference_check(monkeypatch):
+    from soc_bot.config import reject_unresolved_references
+
+    monkeypatch.setenv("DISCORD_TOKEN", "a-real-looking-token")
+    reject_unresolved_references()  # no error
+
+
+def test_secret_reads_the_environment_first(monkeypatch, tmp_path):
+    from soc_bot.config import secret
+
+    (tmp_path / "discord_token").write_text("from-the-file\n")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+    monkeypatch.setenv("DISCORD_TOKEN", " from-the-environment ")
+    assert secret("DISCORD_TOKEN") == "from-the-environment"
+
+
+def test_secret_falls_back_to_a_systemd_credential_and_stays_out_of_the_environment(monkeypatch, tmp_path):
+    import os
+
+    from soc_bot.config import secret
+
+    (tmp_path / "discord_token").write_text("from-the-file\n")
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+    monkeypatch.delenv("DISCORD_TOKEN", raising=False)
+    assert secret("DISCORD_TOKEN") == "from-the-file"
+    assert "DISCORD_TOKEN" not in os.environ
+
+
+def test_secret_is_empty_when_nothing_provides_it(monkeypatch, tmp_path):
+    from soc_bot.config import secret
+
+    monkeypatch.delenv("SPLUNK_TOKEN", raising=False)
+    monkeypatch.delenv("CREDENTIALS_DIRECTORY", raising=False)
+    assert secret("SPLUNK_TOKEN") == ""
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))  # directory without the file
+    assert secret("SPLUNK_TOKEN") == ""
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path / "missing"))
+    assert secret("SPLUNK_TOKEN") == ""
+
+
+def test_secret_never_reads_outside_the_credentials_directory(monkeypatch, tmp_path):
+    from soc_bot.config import secret
+
+    (tmp_path / "outside").write_text("stolen")
+    inner = tmp_path / "creds"
+    inner.mkdir()
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(inner))
+    assert secret("../OUTSIDE") == "" and secret("sub/x") == ""
+
+
+def test_settings_use_credentials_for_every_secret(monkeypatch, tmp_path):
+    from soc_web.config import WebSettings
+
+    (tmp_path / "soc_web_secret_key").write_text("k" * 40)
+    monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
+    monkeypatch.delenv("SOC_WEB_SECRET_KEY", raising=False)
+    assert WebSettings.from_env().secret_key == "k" * 40

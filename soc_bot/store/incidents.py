@@ -26,6 +26,14 @@ _STATUS_SQL = {
     "all": "1 = 1",
 }
 
+# Fixed map for the same reason. "severity" puts High first, then newest first within each severity.
+ORDERS = {
+    "newest": "id DESC",
+    "oldest": "id ASC",
+    "updated": "updated DESC, id DESC",
+    "severity": "CASE severity WHEN 'High' THEN 0 WHEN 'Medium' THEN 1 WHEN 'Low' THEN 2 ELSE 3 END, id DESC",
+}
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS incidents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -104,7 +112,11 @@ class IncidentStore:
 
         return await self._run(op)
 
-    async def list(self, status: str = "open", severity: str | None = None, limit: int = 10) -> list[Incident]:
+    async def list(
+        self, status: str = "open", severity: str | None = None, limit: int = 10, order: str = "newest"
+    ) -> list[Incident]:
+        if order not in ORDERS:
+            raise ValueError(f"Unknown order {order!r}")
         if status not in _STATUS_SQL:
             raise ValueError(f"Unknown status {status!r}")
         if severity is not None and severity not in SEVERITIES:
@@ -116,7 +128,7 @@ class IncidentStore:
             if severity:
                 sql += " AND severity = ?"
                 params.append(severity)
-            sql += " ORDER BY id DESC LIMIT ?"
+            sql += f" ORDER BY {ORDERS[order]} LIMIT ?"
             params.append(max(1, min(limit, 50)))
             return [Incident.from_row(r) for r in db.execute(sql, params)]
 

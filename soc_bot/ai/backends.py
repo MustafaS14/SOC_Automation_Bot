@@ -14,7 +14,7 @@ import shutil
 import tempfile
 from typing import Protocol
 
-from .prompt import DENIED_REPLY, OFF_TOPIC_REPLY
+from .prompt import DENIED_REPLY, OFF_TOPIC_REPLY, PLAIN_MARKER
 
 log = logging.getLogger("soc_bot")
 
@@ -103,6 +103,101 @@ def _call(tool: str, **args: str) -> str:
     return json.dumps({"tool": tool, "args": args})
 
 
+_STATUS_WORDS = {
+    "New": "nobody has picked it up yet",
+    "Active": "someone is already working on it",
+    "Closed": "it has already been looked at and closed",
+}
+_VERDICT_WORDS = {
+    "Malicious": "Several reputation services flag this address as dangerous, so it is worth taking seriously.",
+    "Suspicious": "Some reputation services have a bad record for this address, so it deserves a closer look.",
+    "Clean": "The reputation services found nothing bad about this address.",
+    "Internal": "This address belongs to the lab's own network, so outside services were not asked about it.",
+    "Incomplete": "The reputation check did not fully work, so this is not a clean bill of health.",
+}
+
+
+def _plain_words(tool: str, data: str) -> str:
+    """Two short non-technical sentences for the mock answer, built only from the lookup result."""
+    if tool in ("incident_summary", "get_incident"):
+        severity = re.search(r"severity=(\w+)", data)
+        status = re.search(r"status=(\w+)", data)
+        how = f"rated {severity.group(1).lower()}" if severity else "of unknown seriousness"
+        state = _STATUS_WORDS.get(status.group(1), "its state is unclear") if status else "its state is unclear"
+        return (f"This is an alert from the monitoring system, {how}, and {state}. "
+                "It means something unusual was noticed, not that anything has been proven.")
+    if tool == "incident_counts":
+        total = re.search(r"open incidents: (\d+)", data)
+        n = total.group(1) if total else "some"
+        return (f"There are {n} alerts that nobody has finished dealing with. "
+                "The number shows how busy the team is, not how much danger there is.")
+    if tool == "list_incidents":
+        return "This is a list of the latest alerts, newest first. Open the one you care about to see what happened."
+    if tool == "run_hunt":
+        if data.startswith("search returned no rows"):
+            return ("The system searched its records and found nothing that matches. "
+                    "That is only reassuring if it was the right thing to search for.")
+        return "The system searched its records and these are the matching entries. Each line is something that happened on a machine."
+    if tool == "enrich_ip":
+        verdict = re.search(r"verdict=(\w+)", data)
+        return _VERDICT_WORDS.get(verdict.group(1) if verdict else "", "The reputation check gave no clear answer.")
+    if tool == "isolation_preview":
+        return "Nothing was changed. This only describes what cutting a machine off the network would do, and a person has to approve that."
+    if tool == "recent_audit":
+        return "This is a record of who used the system recently and what they did, kept so actions can be checked later."
+    return "This is what the monitoring system currently knows. A person should check the details before acting."
+
+
+# Follow-ups ("explain that better") are scripted too: the mock only re-words the earlier answer it is shown in
+# <earlier_exchanges>, using fixed templates. It understands nothing; a real model does this properly.
+_FOLLOW_UP = re.compile(
+    r"\b(explain|simpler|simple terms|plain words|plain english|clearer|elaborate|more detail|tell me more"
+    r"|what does (?:that|this|it) mean|don'?t understand)\b"
+)
+_NEW_SUBJECT = ("audit", "who asked", "isolat", "incident", "how many", "count", "list", "recent", "latest", "show",
+                "command")
+_EXPLAIN_TAG = "(scripted mock explanation, not a language model) "
+_ACTION_WORDS = {
+    "auth.login": "signed in", "auth.logout": "signed out", "incident.list": "looked at the incident list",
+    "incident.show": "opened an incident", "incident.ack": "acknowledged an incident",
+    "incident.close": "closed an incident", "incident.comment": "added a comment", "ai.ask": "asked the assistant a question",
+    "hunt.run": "ran a search", "enrich.ip": "checked an address's reputation", "audit.view": "looked at the audit log",
+    "web.access": "was refused a page",
+}
+_EXPLAIN_BODY = {
+    "incident_counts": "The numbers are how many incidents are still open, split by how serious they are, and how many are new, being worked on or closed.",
+    "incident_summary": "The summary says which rule raised the alert, how serious it is rated and where it stands. A high rating means look at it first.",
+    "get_incident": "This is the full record of one alert: which rule fired, on which machine, and what has been noted so far.",
+    "list_incidents": "Each line is one alert: its number, the rule that fired and how serious it is rated.",
+    "run_hunt": "The search looked through recorded events from the machine. Each row is one event, with its time and what ran.",
+    "enrich_ip": "The address was checked against public reputation services, and the verdict sums up what they said.",
+}
+
+
+def _explain_audit(answer: str) -> tuple[str, str]:
+    actions = [a for a in re.findall(r"action=([\w.]+)", answer)]
+    actors = sorted(set(re.findall(r"actor=([\w.@-]+)", answer)))
+    if not actions:
+        return "This is the audit log, a record of what people did in the SOC tools.", "It is a diary of who did what, kept so actions can be checked later."
+    counts: dict[str, int] = {}
+    for a in actions:
+        counts[a] = counts.get(a, 0) + 1
+    parts = ", ".join(f"{n} time{'s' if n > 1 else ''} {_ACTION_WORDS.get(a, a)}" for a, n in counts.items())
+    who = " and ".join(actors) if actors else "someone"
+    body = f"Each line is one thing a person did in the SOC tools. Here {who} did the following: {parts}."
+    return body, "This is a diary of who used the system and what they did. Nothing in it says anything is wrong by itself."
+
+
+def _explain(tools: str, answer: str) -> str:
+    tool = tools.split(",")[-1] if tools else ""
+    if tool == "recent_audit":
+        body, plain = _explain_audit(answer)
+    else:
+        body = _EXPLAIN_BODY.get(tool, "That answer is the raw result of a lookup. Ask about one incident to dig into it.")
+        plain = _plain_words(tool, answer)
+    return f"{_EXPLAIN_TAG}{body}\nConfidence: low (mock assistant, no real model).\nNot checked: anything beyond the earlier answer.\n\n{PLAIN_MARKER} {plain}"
+
+
 _SOC_WORDS = (
     "incident", "alert", "host", "ip", "detect", "attack", "log", "command", "isolat", "splunk", "soc",
     "malware", "login", "ssh", "sudo", "audit", "hunt", "severity", "triage", "mitre", "discovery", "caldera",
@@ -116,8 +211,8 @@ class MockBackend:
 
     async def complete(self, system: str, prompt: str) -> str:
         question = self._between(prompt, "<question>", "</question>").lower()
-        tools = set(re.findall(r"^- (\w+)\(", prompt, re.M))
-        lookups = re.findall(r'<log_data tool="(\w+)"[^>]*>\n(.*?)\n</log_data>', prompt, re.S)
+        tools = set(re.findall(r"^- (\w+)\(", prompt, re.MULTILINE))
+        lookups = re.findall(r'<log_data tool="(\w+)"[^>]*>\n(.*?)\n</log_data>', prompt, re.DOTALL)
 
         if lookups:
             data = lookups[-1][1]
@@ -125,8 +220,17 @@ class MockBackend:
                 return _reply(DENIED_REPLY)
             if data.startswith("ERROR"):
                 return _reply("I couldn't look that up: " + data[7:160])
-            return _reply(f"{data[:500]}\nConfidence: low (mock assistant, no real model).\nNot checked: everything else.")
+            tool = lookups[-1][0]
+            return _reply(
+                f"{data[:500]}\nConfidence: low (mock assistant, no real model).\nNot checked: everything else."
+                f"\n\n{PLAIN_MARKER} {_plain_words(tool, data)}"
+            )
 
+        if _FOLLOW_UP.search(question) and not any(w in question for w in _NEW_SUBJECT) and not re.search(r"\d", question):
+            earlier = re.findall(r'<exchange tools="([\w,]*)"><q>(.*?)</q><a>(.*?)</a></exchange>', prompt, re.DOTALL)
+            if earlier:
+                return _reply(_explain(earlier[-1][0], earlier[-1][2]))
+            return _reply("(mock) Ask me something about the SOC first, then I can explain the answer.")
         if any(w in question for w in _SECRET_WORDS):
             return _reply("I can't share credentials or configuration.")
         host = re.search(r"\b(soc-[a-z0-9-]+)\b", question)

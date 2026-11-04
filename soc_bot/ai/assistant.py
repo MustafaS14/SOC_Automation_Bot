@@ -4,23 +4,24 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from ..rbac import Permission
 from ..validators import ValidationError
 from .backends import AiBackend, BackendError
-from .prompt import SYSTEM_PROMPT, TOOL_PROTOCOL_REMINDER
+from .prompt import PLAIN_MARKER, SYSTEM_PROMPT, TOOL_PROTOCOL_REMINDER
 from .tools import LEVEL_LABELS, ToolContext, describe_args, execute, tools_for
 
 log = logging.getLogger("soc_bot")
 
 MAX_QUESTION_CHARS = 500
 MAX_LOOKUPS = 3
-MAX_ANSWER_CHARS = 1500
+MAX_ANSWER_CHARS = 2200  # room for the answer, its evidence and the plain-words part
 
 
 @dataclass
@@ -30,6 +31,19 @@ class AiAnswer:
     tools_used: list[str] = field(default_factory=list)
     denied: bool = False
     calls: int = 0
+
+
+@dataclass(frozen=True)
+class Exchange:
+    """One earlier question and answer from the same user, offered to the model as context for a follow-up."""
+
+    question: str
+    answer: str
+    tools: str = ""
+
+
+MAX_HISTORY_QUESTION = 300
+MAX_HISTORY_ANSWER = 1200
 
 
 class _Window:
@@ -49,17 +63,44 @@ class _Window:
         return True
 
 
+_PLAIN_RE = re.compile(rf"^[ 	]*{re.escape(PLAIN_MARKER)}[ 	]*", re.IGNORECASE | re.MULTILINE)
+
+
+def split_plain_words(text: str) -> tuple[str, str | None]:
+    """(the technical answer, the plain-words part or None). The marker must start a line."""
+    match = _PLAIN_RE.search(text)
+    if match is None:
+        return text, None
+    plain = text[match.end():].strip()
+    return text[: match.start()].rstrip(), plain or None
+
+
 def _safe(text: str) -> str:
     """Make untrusted text unable to close or forge the tags the prompt is built from."""
     return text.replace("<", "&lt;").replace(">", "&gt;")
 
 
 def build_prompt(
-    level: Permission, question: str, lookups: list[tuple[str, object, str]], *, final: bool = False
+    level: Permission,
+    question: str,
+    lookups: list[tuple[str, object, str]],
+    *,
+    final: bool = False,
+    history: Sequence[Exchange] = (),
 ) -> str:
     parts = [f"<user_level>{LEVEL_LABELS[level]}</user_level>", "<tools>"]
     parts += [f"- {tool.description}" for tool in tools_for(level)]
-    parts += ["</tools>", f"<question>{_safe(question)}</question>"]
+    parts.append("</tools>")
+    if history:
+        parts.append("<earlier_exchanges>")
+        for e in history:
+            tools = re.sub(r"[^\w,]", "", e.tools)[:120]
+            parts.append(
+                f'<exchange tools="{tools}"><q>{_safe(e.question[:MAX_HISTORY_QUESTION])}</q>'
+                f"<a>{_safe(e.answer[:MAX_HISTORY_ANSWER])}</a></exchange>"
+            )
+        parts.append("</earlier_exchanges>")
+    parts.append(f"<question>{_safe(question)}</question>")
     if lookups:
         parts.append("<lookups>")
         for name, args, result in lookups:
@@ -123,7 +164,15 @@ class Assistant:
         window = self._users.setdefault(user_id, _Window(self._user_limit, 3600.0, self._clock))
         return window.allow()
 
-    async def ask(self, question: str, level: Permission, user_id: int, *, automatic: bool = False) -> AiAnswer:
+    async def ask(
+        self,
+        question: str,
+        level: Permission,
+        user_id: int,
+        *,
+        automatic: bool = False,
+        history: Sequence[Exchange] = (),
+    ) -> AiAnswer:
         question = " ".join(question.split())
         if not question:
             raise ValidationError("Ask a question first.")
@@ -143,7 +192,7 @@ class Assistant:
                 return answer
             answer.calls += 1
             try:
-                raw = await self._backend.complete(SYSTEM_PROMPT, build_prompt(level, question, lookups, final=final))
+                raw = await self._backend.complete(SYSTEM_PROMPT, build_prompt(level, question, lookups, final=final, history=history))
             except BackendError as exc:
                 log.warning("AI backend failed: %s", exc)
                 answer.text = "The assistant is unavailable right now."

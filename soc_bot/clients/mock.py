@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from datetime import datetime, timezone
+from typing import ClassVar
 
 from ..models import IpReport, IsolationResult
 from ..store import IncidentStore
@@ -71,16 +72,16 @@ class MockSshResponseClient(SshResponseClient):
 
 
 class MockEnrichmentClient:
-    _KNOWN = {
-        "185.220.101.4": dict(abuse_score=100, abuse_reports=2384, country="DE", isp="Tor Exit Node",
-                              usage_type="Reserved", vt_malicious=14, vt_suspicious=3, vt_harmless=55,
-                              as_owner="Stiftung Erneuerbare Freiheit"),
-        "45.155.205.233": dict(abuse_score=62, abuse_reports=311, country="RU", isp="Example Hosting LLC",
-                               usage_type="Data Center/Web Hosting/Transit", vt_malicious=3, vt_suspicious=1,
-                               vt_harmless=60, as_owner="Example Hosting LLC"),
-        "8.8.8.8": dict(abuse_score=0, abuse_reports=12, country="US", isp="Google LLC",
-                        usage_type="Content Delivery Network", vt_malicious=0, vt_suspicious=0,
-                        vt_harmless=70, as_owner="GOOGLE"),
+    _KNOWN: ClassVar[dict[str, dict]] = {
+        "185.220.101.4": {"abuse_score": 100, "abuse_reports": 2384, "country": "DE", "isp": "Tor Exit Node",
+                              "usage_type": "Reserved", "vt_malicious": 14, "vt_suspicious": 3, "vt_harmless": 55,
+                              "as_owner": "Stiftung Erneuerbare Freiheit"},
+        "45.155.205.233": {"abuse_score": 62, "abuse_reports": 311, "country": "RU", "isp": "Example Hosting LLC",
+                               "usage_type": "Data Center/Web Hosting/Transit", "vt_malicious": 3, "vt_suspicious": 1,
+                               "vt_harmless": 60, "as_owner": "Example Hosting LLC"},
+        "8.8.8.8": {"abuse_score": 0, "abuse_reports": 12, "country": "US", "isp": "Google LLC",
+                        "usage_type": "Content Delivery Network", "vt_malicious": 0, "vt_suspicious": 0,
+                        "vt_harmless": 70, "as_owner": "GOOGLE"},
     }
 
     async def enrich_ip(self, value: str) -> IpReport:
@@ -92,9 +93,9 @@ class MockEnrichmentClient:
         known = self._KNOWN.get(str(ip))
         if known is None:
             seed = hashlib.sha256(str(ip).encode()).digest()
-            known = dict(abuse_score=seed[0] % 40, abuse_reports=seed[1] % 50, country="NL",
-                         isp="Mock ISP", usage_type="Fixed Line ISP", vt_malicious=seed[2] % 2,
-                         vt_suspicious=0, vt_harmless=60, as_owner="MOCK-AS")
+            known = {"abuse_score": seed[0] % 40, "abuse_reports": seed[1] % 50, "country": "NL",
+                         "isp": "Mock ISP", "usage_type": "Fixed Line ISP", "vt_malicious": seed[2] % 2,
+                         "vt_suspicious": 0, "vt_harmless": 60, "as_owner": "MOCK-AS"}
         for key, val in known.items():
             setattr(report, key, val)
         return report

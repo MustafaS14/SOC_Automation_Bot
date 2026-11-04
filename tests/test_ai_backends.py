@@ -88,11 +88,11 @@ async def test_mock_backend_answers_in_the_protocol_format():
     assert json.loads(await MockBackend().complete("sys", prompt)) == {"tool": "incident_counts", "args": {}}
 
 
-SETTINGS = dict(
-    discord_token="t", guild_id=None, allowed_channel_ids=frozenset({1}), audit_channel_id=None,
-    read_role_ids=frozenset({1}), triage_role_ids=frozenset(), response_role_ids=frozenset(),
-    isolation_denylist=(), mock_mode=True,
-)
+SETTINGS = {
+    "discord_token": "t", "guild_id": None, "allowed_channel_ids": frozenset({1}), "audit_channel_id": None,
+    "read_role_ids": frozenset({1}), "triage_role_ids": frozenset(), "response_role_ids": frozenset(),
+    "isolation_denylist": (), "mock_mode": True,
+}
 
 
 def test_build_assistant_follows_the_setting():

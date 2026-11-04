@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import ipaddress
 import os
+import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
@@ -10,6 +12,40 @@ from dotenv import load_dotenv
 
 class ConfigError(RuntimeError):
     pass
+
+
+def reject_unresolved_references() -> None:
+    """Stop when a setting still holds a 1Password reference (op://vault/item/field) instead of the secret.
+
+    `op run --env-file=.env -- <command>` swaps the references for the real values before the program starts. Started
+    any other way, the reference text itself would be used as the token, and every call with it would fail confusingly.
+    """
+    names = sorted(name for name, value in os.environ.items() if value.strip().startswith("op://"))
+    if names:
+        raise ConfigError(
+            f"{', '.join(names)} still hold 1Password references (op://...) instead of values. Start the program "
+            "through the 1Password CLI so they are filled in, e.g.: op run --env-file=.env -- python -m soc_bot"
+        )
+
+
+_CREDENTIAL_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
+
+
+def secret(name: str) -> str:
+    """A secret setting: the environment variable if it is set (how `op run` on Windows hands it over), else the
+    systemd credential of the same name in lower case ($CREDENTIALS_DIRECTORY/discord_token for DISCORD_TOKEN).
+
+    The credential is read when asked for and never copied into the environment, so it does not show up in
+    `systemctl show` or a process listing. Empty string when neither exists.
+    """
+    value = os.getenv(name, "").strip()
+    directory = os.getenv("CREDENTIALS_DIRECTORY", "").strip()
+    if value or not directory or not _CREDENTIAL_NAME.match(name):
+        return value
+    try:
+        return (Path(directory) / name.lower()).read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
 
 
 def _bool(value: str | None) -> bool:
@@ -102,10 +138,11 @@ class Settings:
     ai_max_rows: int = 20
 
     @classmethod
-    def from_env(cls) -> Settings:
+    def from_env(cls, *, require_discord: bool = True) -> Settings:
         load_dotenv()
+        reject_unresolved_references()
         settings = cls(
-            discord_token=os.getenv("DISCORD_TOKEN", "").strip(),
+            discord_token=secret("DISCORD_TOKEN"),
             guild_id=_int_or_none("DISCORD_GUILD_ID"),
             allowed_channel_ids=_id_set("ALLOWED_CHANNEL_IDS"),
             audit_channel_id=_int_or_none("AUDIT_CHANNEL_ID"),
@@ -118,20 +155,20 @@ class Settings:
             db_path=os.getenv("DB_PATH", "incidents.db").strip(),
             webhook_host=os.getenv("WEBHOOK_HOST", "127.0.0.1").strip(),
             webhook_port=_int_default("WEBHOOK_PORT", 8765),
-            webhook_secret=os.getenv("WEBHOOK_SECRET", "").strip(),
+            webhook_secret=secret("WEBHOOK_SECRET"),
             webhook_rate_limit=_int_default("WEBHOOK_RATE_LIMIT", 30),
             webhook_link_hosts=_str_list("WEBHOOK_LINK_HOSTS"),
             splunk_url=os.getenv("SPLUNK_URL", "").strip().rstrip("/"),
-            splunk_token=os.getenv("SPLUNK_TOKEN", "").strip(),
+            splunk_token=secret("SPLUNK_TOKEN"),
             splunk_verify_tls=_bool(os.getenv("SPLUNK_VERIFY_TLS", "true")),
             splunk_hec_url=os.getenv("SPLUNK_HEC_URL", "").strip(),
-            splunk_hec_token=os.getenv("SPLUNK_HEC_TOKEN", "").strip(),
+            splunk_hec_token=secret("SPLUNK_HEC_TOKEN"),
             responder_user=os.getenv("RESPONDER_USER", "responder").strip(),
             responder_ssh_key=os.getenv("RESPONDER_SSH_KEY", "").strip(),
             responder_known_hosts=os.getenv("RESPONDER_KNOWN_HOSTS", "").strip(),
             responder_hosts=_host_map("RESPONDER_HOSTS"),
-            abuseipdb_api_key=os.getenv("ABUSEIPDB_API_KEY", "").strip() or None,
-            virustotal_api_key=os.getenv("VIRUSTOTAL_API_KEY", "").strip() or None,
+            abuseipdb_api_key=secret("ABUSEIPDB_API_KEY") or None,
+            virustotal_api_key=secret("VIRUSTOTAL_API_KEY") or None,
             audit_log_path=os.getenv("AUDIT_LOG_PATH", "audit.jsonl"),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
             viewer_role_ids=_id_set("RBAC_VIEWER_ROLE_IDS"),
@@ -145,7 +182,7 @@ class Settings:
             ai_daily_calls=_int_default("AI_DAILY_CALLS", 150),
             ai_max_rows=_int_default("AI_MAX_ROWS", 20),
         )
-        settings.validate()
+        settings.validate(require_discord=require_discord)
         return settings
 
     @property
@@ -156,11 +193,12 @@ class Settings:
             hosts.add(host.lower())
         return frozenset(hosts)
 
-    def validate(self) -> None:
+    def validate(self, *, require_discord: bool = True) -> None:
+        """`require_discord=False` is for the web console: its own logins, no Discord connection, no alert webhook."""
         missing = []
-        if not self.discord_token:
+        if require_discord and not self.discord_token:
             missing.append("DISCORD_TOKEN")
-        if not self.mock_mode and not self.webhook_secret:
+        if require_discord and not self.mock_mode and not self.webhook_secret:
             missing.append("WEBHOOK_SECRET")
         # Each backend is optional, but a half-configured one is an error.
         pairs = (
@@ -188,7 +226,7 @@ class Settings:
             raise ConfigError("WEBHOOK_PORT must be between 1 and 65535.")
         if any("/" in h or ":" in h or " " in h for h in self.webhook_link_hosts):
             raise ConfigError("WEBHOOK_LINK_HOSTS must be bare hostnames, without scheme, port or path.")
-        if not (
+        if require_discord and not (
             self.read_role_ids or self.triage_role_ids or self.response_role_ids
             or self.viewer_role_ids or self.admin_role_ids
         ):
@@ -204,7 +242,7 @@ class Settings:
             raise ConfigError("AI_TIMEOUT_SECONDS must be at least 5.")
         if min(self.ai_user_questions_per_hour, self.ai_auto_notes_per_hour, self.ai_daily_calls, self.ai_max_rows) < 1:
             raise ConfigError("The AI_* limits must each be at least 1.")
-        if not self.allowed_channel_ids:
+        if require_discord and not self.allowed_channel_ids:
             raise ConfigError(
                 "No channels configured. Set ALLOWED_CHANNEL_IDS so commands are not accepted everywhere."
             )
