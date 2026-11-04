@@ -348,23 +348,94 @@ Snapshots taken at this point: `soc-siem` and `SOC-Victim-Ubuntu`, both named `p
 
 **In simple words.** We turned the attacker on, let it run a few reconnaissance commands on the victim, and checked that Splunk saw them. Then we wrote the first two "tripwires" (detections). One works and was proven; the other is written but not proven yet.
 
-1. **Starting the attacker.** The first start failed with a generic VirtualBox error. It started on a later try after memory was freed (see [troubleshooting.md](troubleshooting.md)). The login name on all three VMs is `mus`, found in the PowerShell history.
+1. **Starting the attacker.** The first start failed with a generic VirtualBox error. It started on a later try after memory was freed (see [troubleshooting.md](troubleshooting.md)). The attacker's login name is `mus`, found in the PowerShell history (the SIEM uses a different one, see section 15).
 2. **Caldera.** The server started in `tmux` and listened on port 8888. A second attempt to start it printed "address already in use" errors, which only means the first copy was already running. Warnings about the `builder` plugin, Windows payload tools and a few missing abilities are harmless here.
 3. **The agent.** The Sandcat command from Caldera was run on the victim. The agent is named `splunkd` on purpose (it imitates Splunk's own name) and showed `Beacon (HTTP): ALIVE`.
 4. **A clock problem.** The SIEM had been resumed from a saved state and its clock was a day behind, so new events looked like they were from the future and the "last 15 minutes" search found nothing. Searching a wider window (`earliest=-2d latest=+2d`) showed the events were there. After `sudo timedatectl set-ntp true` the clock matched (12:04 UTC on 30 October). Do this after every resume.
 5. **What Splunk recorded.** The agent being downloaded and started (`curl`, `chmod +x`, `./splunkd -server http://192.168.56.30:8888 -group red -v`), then the operation's commands: `whoami`, `cut -d:` (reading the account list), `grep`, `ps aux` and `grep sshd`. Login-banner scripts (`tr`, `cut`) are background noise. Caldera runs its commands through `sh -c '...'`, so the real command can sit in field `a2`, not `a0`.
-6. **Detection 1, several discovery commands in a short time** (MITRE T1033, T1082, T1057, T1087.001). Written to read the real command from either field. It found no result yet because only two different commands (`whoami`, `ps`) fell in one ten-minute window and the rule needs three. Not proven.
+6. **Detection 1, several discovery commands in a short time** (MITRE T1033, T1082, T1057, T1087.001). Written to read the real command from either field. It found no result yet because only two different commands (`whoami`, `ps`) fell in one ten-minute window and the rule needs three. Not proven that day (rewritten and proven on 2 November, see section 16).
 7. **Detection 2, a program called `./splunkd` started from a home directory** (MITRE T1036.004, masquerading). It found exactly one event, the agent start, and extracts the attacker's address `192.168.56.30` from the command. **Proven.**
-8. **The alert was not saved.** Setting it up needed a throttle field and an action, then Splunk said the connection may have been lost: the SIEM VM had crashed (VirtualBox *Guru Meditation*, shown in French as *Méditation profonde*). The alert has to be recreated after the VM is restarted. The cause of the crash has not been investigated.
+8. **The alert was not saved.** Setting it up needed a throttle field and an action, then Splunk said the connection may have been lost: the SIEM VM had crashed (VirtualBox *Guru Meditation*, shown in French as *Méditation profonde*). The alert had to be recreated after the VM was restarted (done on 2 November, see section 15). The cause of the crash has not been investigated.
 
 All detections are listed in [detections.md](detections.md).
 
-## 15. Next
+## 15. Restarting after the crash and saving the alert (2026-11-02)
 
-- Restart `soc-siem` after the crash, wait until Splunk is `healthy`, fix the clock, and look at `VBox.log` for the cause.
-- Recreate the `./splunkd` alert (every 5 minutes, last 15 minutes, throttled by `host` for 30 minutes), then prove detection 1 with a full Discovery run.
-- Write a small custom Splunk alert action that posts the first result row to the bot's webhook with the `X-Webhook-Secret` header (the built-in webhook cannot add headers), with the secret read from a root-only file and never stored in the repo.
-- Create the `responder` user on the victim from [`infra/responder/`](../infra/responder/); run the bot in real mode; send a test alert with `curl`, then a real Caldera run; test isolation from a snapshot first.
+**In simple words.** We turned the SIEM back on, worked through the things that stopped Splunk showing its web page, saved the first alert properly, and kept a copy of it in the repository.
+
+1. **Login name.** The `soc-siem` VM is entered with the user `soc-siem`, not `mus` (`mus` is the attacker's account). Earlier pages that said `mus` for all three machines were wrong and are corrected.
+2. **The clock.** The VM woke up four days behind (its login banner still said 29 October). `sudo timedatectl set-ntp true` and a restart of `systemd-timesyncd` fixed it. Memory (about 6 GB free, no swap use) and disk (36 percent used) were fine.
+3. **Splunk slow to become healthy.** `docker ps` showed Splunk as `health: starting` for about 15 minutes and then `unhealthy`, while Logstash was fine. Splunk was still running its start-up setup (one step, updating the HEC token, took about 5 minutes on this VM). The last health check showed the management port answering, so the label was only catching up.
+4. **The web page said "Connection refused".** The browser showed a short error from Splunk Web. The log showed it forwarding every page to an internal web service on port 8065 that nothing was listening on, while the main Splunk process was running. `docker restart splunk` fixed it and the login page worked again. The reason the web service did not start after the crash was not found.
+5. **Commands that misled.** `docker exec` without `-u splunk` runs as the wrong user and prints "Permission denied" and "pid file unreadable" even though Splunk is fine. The container has no `ss` tool. Use `docker exec -u splunk splunk ...`, and test pages with `curl` from the VM.
+6. **The alert is saved.** The `./splunkd` search returned its one row (the agent start on 30 October) and was saved as an alert with the settings in [detections.md](detections.md), severity High. A new alert is private, so it first sat in the user's own folder (`etc/users/admin/search/local/`). Sharing it with the app (*Edit Permissions*, *Display for: App*, read and write for admin, read for everyone) moved it to `etc/apps/search/local/savedsearches.conf`. A copy is stored in [`infra/siem/splunk/savedsearches.conf`](../infra/siem/splunk/savedsearches.conf) so it can be restored.
+7. **Not yet proven to fire.** The alert only looks at the last 15 minutes, so it will not fire until a new `./splunkd` start happens. (It fired later the same day, see section 16.)
+
+## 16. Proving both detections (2026-11-02)
+
+**In simple words.** We started the attacker again, ran a full Discovery operation and watched both tripwires work on real attack data. We also found out why the discovery tripwire had missed things before, and fixed it.
+
+1. **The victim would not start.** VirtualBox showed *Aborted* and then *VERR_UNRESOLVED_ERROR* on every start. `VBox.log` ended with Windows error 1455 (the paging file is too small) while reserving the guest's RAM. The PC has 29.8 GB of RAM; the three VMs reserve about 16 GB, WSL held about 6 GB more, and only 0.3 GB of "commit" was left. `wsl --shutdown` freed physical RAM but not commit. Raising the page file to 32 GB initial and 64 GB maximum (*Advanced system settings, Performance, Virtual memory*) took the free commit to 16 GB and the victim started, without a Windows restart. The SIEM had been killed in the same squeeze (shown as *Avortée*) and started normally afterwards. Check with `Get-CimInstance Win32_OperatingSystem` and look at `FreeVirtualMemory`.
+2. **Saved states.** The victim showed *Aborted Saved*. Discarding the saved state (like a power cut; the disk is kept) and starting fresh worked. Fresh boots need the clock fixed on every VM. The victim's time zone is CET and the others use UTC; they agree.
+3. **Splunk was slow again.** After the hard stop it took about 25 minutes to be usable. This time no restart was needed.
+4. **The alert fired.** A new Sandcat agent was started on the victim. The scheduler ran the alert at 14:05 and 14:10 UTC with one result each, and *Triggered Alerts* shows one entry at 14:05:00 (the 14:10 run was held back by the throttle). Detection 2 is proven.
+5. **Hex-encoded commands.** auditd writes a command in hexadecimal when it contains spaces or special characters, so Caldera's `sh -c` commands were unreadable to the old detection 1. Decoding them (see [detections.md](detections.md)) showed what the agent runs: first `> $HOME/.bash_history && unset HISTFILE` (clearing the history), then the Discovery steps.
+6. **Detection 1 rewritten and proven.** A Discovery operation (`discovery-02`, planner atomic, plain-text, group red) ran `whoami`, `id`, `uname`, several `ps aux | grep ...` and `cut -d: -f1 /etc/passwd | grep ...`. The new rule sorts commands into kinds of activity and fires on three or more kinds in ten minutes. It returned one row with four kinds and is saved as a second alert (Medium). Both alerts are copied to [`infra/siem/splunk/savedsearches.conf`](../infra/siem/splunk/savedsearches.conf).
+7. **Mistakes to avoid.** Commands typed into the window where the agent runs in the foreground are not run; they wait until the agent stops, so use a second SSH window. Starting the agent twice leaves two live agents and doubles every step. Stop old ones (`sudo pkill -f "splunkd -server"`) before starting one.
+
+## 17. Discord application, server and bot install
+
+The bot needs a Discord application and a private server before it can run. Details and the exact settings are in [discord-setup.md](discord-setup.md); in short:
+
+- A new application with a bot user. The **Public Bot** switch is off and the **Install Link** is set to None, so nobody but the owner can add it to a server.
+- A private server with three private channels (`#soc-commands`, `#soc-alerts`, `#soc-audit`) and four roles (`soc-viewer`, `soc-analyst`, `soc-responder`, `soc-admin`). The roles only get *View Channel*; the bot gets *View Channel, Send Messages, Embed Links, Read Message History* on each channel. All intents stay off.
+- The bot was installed on `soc-siem` in a Python virtual environment. Its `.env` holds the token, the server and channel IDs, the role IDs and the webhook secret. It is never committed. The bot is started with `python -m soc_bot` inside the venv.
+- A `curl` to `/webhook/splunk` with the secret header produced the first alert card (`#1 - Test alert from curl`) with its Acknowledge, Enrich IP and Isolate host buttons.
+
+Problems met on the way:
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| "Improper token" at start | The token was pasted twice into `.env` | Reset the token, paste it once, check that it has three dot-separated parts. |
+| Acknowledge says "didn't respond in time" | The alert channel was missing from `ALLOWED_CHANNEL_IDS` | Add the alert channel ID to the list and restart the bot. |
+| "address already in use" on start | An earlier bot process was still running | `pkill -f "python -m soc_bot"`, then start again. |
+| Commands pasted into the bot's window do nothing | The bot runs in the foreground there | Use a second SSH window. |
+
+## 18. Splunk custom alert action and the first real alert
+
+Splunk's built-in webhook cannot add a header, so a small custom alert action, `soc_bot_alert`, posts to the bot with the `X-Webhook-Secret` header ([app and install steps](../infra/siem/splunk/soc_bot_alert/README.md)).
+
+- Splunk runs in Docker, so it reaches the bot at the `siem_default` network gateway, `172.18.0.1`, not at `localhost`. The bot listens only on that address.
+- The action was invisible to the `search` app until `metadata/default.meta` had `export = system`. `debug/refresh` reloads the config without a restart.
+- The alert editor does not list custom actions without a UI form, so `action.soc_bot_webhook = 1` was added to both saved searches in [`savedsearches.conf`](../infra/siem/splunk/savedsearches.conf).
+- An ad-hoc `| sendalert soc_bot_webhook` returns an error (the bot answers 400 because there is no `search_name`); that is expected and still proves the action is visible.
+
+**End-to-end proof.** The Masquerading detection fires when the Caldera agent starts, but its 30-minute throttle was still active. The Discovery detection needs three different techniques inside ten minutes, and the Caldera Discovery run only looped `ps`. So `whoami`, `id`, `uname -a`, `hostname` and `ip a` were run by hand on the victim. The next 5-minute search found them, and the **Discovery burst** card appeared in `#soc-alerts` about a minute later: Caldera / manual commands, auditd, Filebeat, Logstash, Splunk alert, custom action, bot, Discord. Times: Splunk and the VMs are UTC, the host PC is UTC+1.
+
+Notes: a second Acknowledge on the same alert produces a harmless 409 in the bot log; and `grep -a` is needed on audit logs because they can contain binary bytes.
+
+## 19. A Caldera-driven alert and a demo run
+
+A full run from a cold start, done for a demo, showed what a restart of the lab really needs:
+
+- **Clocks.** `soc-victim` and `soc-attacker` had been resumed from saved states. The victim still showed 2 November, so its events were stamped two days in the past and Splunk's 15-minute searches found nothing. `timedatectl` said *synchronized: yes* because the host-only network has no NTP server. A cold boot fixed it. Every VM needs a `date -u` check, not only `soc-siem`.
+- **The old bot came back.** The bot that was running when `soc-siem` was saved resumed with it, so starting a second copy failed with *address already in use*.
+- **The agent in the background.** Pasted into an SSH window, the Sandcat agent stops with the window. Starting it with `nohup` from the home folder keeps it alive. Two agents at once make every operation step run twice.
+- **Alert timing.** The Masquerading card (#4) arrived about 5 minutes after the agent started; a later start was silent until the 30-minute throttle ended (card #6). Searches run every 5 minutes and look back 15; with a throttle of 5 minutes, one burst posted three cards (#7 to #9). See [lab-operations.md](lab-operations.md#when-a-card-appears).
+- **Caldera drives the Discovery alert.** The built-in Caldera Discovery adversary only repeated `ps` on Linux. A custom ability (`whoami; id; uname -a; hostname; ip a`) in an adversary profile, started as an operation, produced the three techniques by itself and a Discovery card in Discord. Steps in [scenario 02](../attack-scenarios/02-soc-demo-discovery.md).
+
+## 20. Next
+
+- Run the bot as a systemd service on `soc-siem` instead of by hand.
+- Put the alert throttle back to its normal value (30 minutes) after demos.
+- Richer cards: show the commands and techniques on the Discord card (the Discovery search already returns `what` and `commands`; the bot reads only `host`, `src_ip`, `severity`).
+- Connect the whole operation to the existing web UI and relay the Claude Code assistant to it.
+- A sturdier Masquerading search: check the real executable path, not the typed name `./splunkd`.
+- GitHub Actions for the tests and lint.
+- Watch the host's memory: the SIEM crashes and the victim's failed starts point to Windows running out of commit (see section 16). Cap WSL's memory with a `.wslconfig` and keep the page file large.
+- Add detection 3 (shell history cleared, T1070.003) and decide whether to tighten the discovery threshold.
+- Create the `responder` user on the victim from [`infra/responder/`](../infra/responder/); run the bot in real mode; test isolation from a snapshot first.
+- Show a friendly message for a second Acknowledge, and update the card after it.
 - Try the `op run` setup with a real 1Password item and the systemd credentials on `soc-siem`.
 - Review and merge the `web-app` branch.
 - Check Anthropic's terms for always-on Claude Code use before switching on the real AI backend, and decide whether the repository is public or private (some pages still say private).

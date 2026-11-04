@@ -32,6 +32,15 @@ How to start, use and stop the lab. For how it was built, see [lab-build-log.md]
    Detach from tmux with `Ctrl+b` then `d`; the server keeps running. Check what is running with `tmux ls`. If Caldera reports `[Errno 98] address already in use`, a server is already running: attach to it instead of starting another.
 5. **Open the Caldera web UI** at `http://192.168.56.30:8888` and sign in as `red`. The password was printed when Caldera first started; see "Credentials" below.
 6. **Start the Sandcat agent on the victim.** In Caldera go to *Agents → Deploy an agent → Sandcat → linux*, check that `app.contact.http` is `http://192.168.56.30:8888` (not `0.0.0.0`), copy the command and run it in the victim's terminal. Unless you set the agent up as a service, it does not start by itself after a reboot, so repeat this step each time. The agent shows up in the *Agents* page within about 30 seconds.
+
+   Check that the `app.contact.http` field says port **8888** (a typo such as `:888` makes the agent never connect). To keep the agent running when the SSH window closes, start it in the background from the home folder instead of pasting the foreground command:
+   ```bash
+   cd ~
+   nohup ./splunkd -server http://192.168.56.30:8888 -group red -v > ~/agent.log 2>&1 &
+   pgrep -a splunkd        # exactly one line
+   tail -5 ~/agent.log     # should say Beacon (HTTP): ALIVE
+   ```
+   Stop it with `pkill -f "splunkd -server"`. Never run two agents: every step of an operation then runs twice.
 7. **Check that auditd is recording** on the victim:
    ```bash
    sudo auditctl -l
@@ -39,6 +48,18 @@ How to start, use and stop the lab. For how it was built, see [lab-build-log.md]
    ```
 
 Then run an operation. The first one is described in [../attack-scenarios/01-discovery.md](../attack-scenarios/01-discovery.md).
+
+## Starting and stopping the bot
+
+The bot is not a service yet, so it is started by hand after each boot of `soc-siem` (the Splunk containers start on their own):
+
+```
+ssh soc-siem@192.168.56.10
+cd ~/SOC_Automation_Bot && source .venv/bin/activate
+python -m soc_bot
+```
+
+It runs in the foreground; use a second SSH window for anything else and `Ctrl+C` to stop it. If it reports `address already in use`, an old copy is still running: `pkill -f "python -m soc_bot"`. Plain `python` outside the virtual environment fails. Setup is in [discord-setup.md](discord-setup.md); making it a systemd service is on the to-do list.
 
 ## Stopping the lab
 
@@ -71,9 +92,26 @@ A snapshot is a saved state of a VM that you can return to. Take one before anyt
 ## After resuming a saved VM
 
 - **Fix the clock first.** A VM resumed from a saved state keeps the old time until it re-syncs, and Splunk then stamps and searches events wrongly. On `soc-siem` run `sudo timedatectl set-ntp true`, `sudo systemctl restart systemd-timesyncd`, then `timedatectl` and check *System clock synchronized: yes*. Compare `date` with the victim.
+- **Check the clock on every VM, not only `soc-siem`.** After a resume the victim and attacker can still show the date of the last session. `timedatectl` may even say *synchronized: yes* while the date is two days old, because the host-only network has no NTP server. Compare `date -u` with `soc-siem` (your PC's time minus one hour in winter). If a VM is wrong, shut it down cleanly and start it cold: a cold boot takes its time from the host.
+- **An old bot comes back with a saved `soc-siem`.** If `python -m soc_bot` says `address already in use`, a copy is already running (it was running when the VM was saved). Check with `pgrep -af soc_bot`; one line plus a working `/soc-help` means it is fine and you must not start a second one. Otherwise `pkill -f "python -m soc_bot"` and start it again.
 - **Do not start Caldera twice.** If `tmux ls` shows a `caldera` session, attach to it (`tmux attach -t caldera`) instead of running `python3 server.py` again.
-- **Login name.** All three VMs use the account `mus` for SSH. Passwords are never written in the repository.
-- **A VM that shows *Méditation profonde* (Guru Meditation) has crashed.** Power it off, start it again and wait for Splunk to be `healthy`. See [troubleshooting.md](troubleshooting.md).
+- **Login names.** `soc-siem` logs in as `soc-siem` (`ssh soc-siem@192.168.56.10`); `soc-attacker` and `soc-victim` both use `mus` (`ssh mus@192.168.56.30`, `ssh mus@192.168.56.20`). Passwords are never written in the repository.
+- **A VM that shows *Méditation profonde* (Guru Meditation) has crashed.** Power it off, start it again and wait for Splunk to be `healthy`. After a crash this can take 15 to 25 minutes, and Docker may show `starting` and then `unhealthy` before it settles. If the Splunk page says *Connection refused*, run `docker restart splunk` and wait. See [troubleshooting.md](troubleshooting.md).
+- **Prefer a clean shutdown at the end of a session** (*Machine, ACPI Shutdown*, or `sudo poweroff`) over saving the machine state; resumed VMs came back with a stale clock.
+- **Inspecting Splunk from the VM.** Run `docker exec -u splunk splunk ...` (the `-u splunk` matters), and test the web page with `curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8000/en-GB/account/login`.
+- **Memory.** The three VMs reserve about 16 GB. Keep the Windows page file large (initial 32768 MB, maximum 65536 MB) and run `wsl --shutdown` first if a VM will not start (see [troubleshooting.md](troubleshooting.md)). Start `soc-siem` first and let it settle before the others.
+- **Running an attack test.** Start one agent on the victim from the home folder (`./splunkd -server http://192.168.56.30:8888 -group red -v`) and leave that window alone (use a second SSH window for anything else). Run an operation in Caldera, then stop the agent with `Ctrl+C`. Alerts run every 5 minutes, so allow up to 6 minutes. Check *Activity, Triggered Alerts* in Splunk.
+
+## When a card appears
+
+Cards come from two Splunk searches that run every 5 minutes and look back 15 minutes. Nothing on the attack side repeats on a timer: Caldera only runs commands when an operation runs, and the agent otherwise just checks in with the server.
+
+- **After a burst of commands** the first card arrives within about 6 minutes (one search interval plus a minute).
+- **Throttle.** Each alert fires at most once per host in its suppress period (`alert.suppress.period`, 30 minutes in the repository copy). While the period runs, new matches are hidden.
+- **Repeats.** If the period is shorter than the 15-minute lookback (for example 5 minutes during a demo), the same burst can post up to three cards, 5 minutes apart, until its events leave the window. With a period of 15 minutes or more there is one card per burst.
+- **Masquerading** fires when `./splunkd` is started (a new agent start); **Discovery burst** fires when three different recon techniques fall inside one 10-minute block (a Caldera operation with the [demo profile](../attack-scenarios/02-soc-demo-discovery.md), or hand-typed `whoami`, `id`, `uname -a`, `hostname`, `ip a`).
+- **Enrich IP** only works on cards with a source IP. The Masquerading card has one; the Discovery card shows `n/a`.
+- To change the period in the lab: edit `alert.suppress.period` in `/opt/splunk/etc/apps/search/local/savedsearches.conf` inside the container (`docker exec -u splunk splunk sed -i ...`), then open `/en-GB/debug/refresh` in the Splunk web page and click *Refresh*. Do not use the alert editor for this: it does not know the custom action.
 
 ## Ports used in the lab
 
@@ -84,7 +122,7 @@ A snapshot is a saved state of a VM that you can return to. Take one before anyt
 | 8000 | Splunk Web | `soc-siem` |
 | 8088 | Splunk HEC (Logstash sends logs here) | `soc-siem` |
 | 8089 | Splunk REST API (hunts, AI lookups) | `soc-siem` |
-| 8765 | Bot webhook (Splunk alerts arrive here) | where the bot runs |
+| 8765 | Bot webhook (Splunk alerts arrive here); the bot listens on the Docker gateway `172.18.0.1` only | `soc-siem` |
 | 8080 | Web console | where the console runs |
 | 8888 | Caldera web interface | `soc-attacker` |
 | 7010, 7011, 7012 | Caldera agent contact ports | `soc-attacker` |

@@ -31,7 +31,7 @@ flowchart LR
     AUD -- "audit.log" --> FB
     FB -- "Beats :5044" --> LS
     LS -- "HEC :8088" --> SP
-    SP -- "alert webhook" --> BOT
+    SP -- "custom alert action, webhook with secret header" --> BOT
     BOT <-- "slash commands" --> ANA
     BOT -- "/hunt REST :8089" --> SP
     BOT -- "SSH isolate (restricted user)" --> VIC
@@ -50,7 +50,7 @@ Each VM has two adapters.
 |---|---|---|---|---|---|
 | `soc-attacker` | Caldera C2 / red team | Ubuntu Server 24.04.5 | 192.168.56.30 | 4 GB | ✅ |
 | `soc-victim` | Monitored endpoint | Ubuntu Desktop 24.04.5 | 192.168.56.20 | 4 GB | ✅ |
-| `soc-siem` | Splunk + Logstash + bot | Ubuntu Server 24.04.5 | 192.168.56.10 | 8 GB, 4 CPUs | 🔧 (Splunk and Logstash run; bot ⏳) |
+| `soc-siem` | Splunk + Logstash + bot | Ubuntu Server 24.04.5 | 192.168.56.10 | 8 GB, 4 CPUs | ✅ (Splunk, Logstash and the bot run) |
 
 The host-only network is isolated from the real LAN, so the attack simulation can never leave the machine.
 
@@ -64,8 +64,8 @@ The host-only network is isolated from the real LAN, so the attack simulation ca
 | Splunk in Docker on `soc-siem` | ✅ | Healthy; web UI `:8000`, HEC `:8088` (HTTPS), REST `:8089`. Indexes `linux` and `soc_audit`; HEC token allows both. Compose file in `infra/siem/` |
 | Logstash on `soc-siem` | ✅ | Beats input `:5044`, labels and filters events, sets the real event time, sends to Splunk HEC. Pipeline in `infra/siem/logstash/pipeline/soc.conf` |
 | Filebeat on `soc-victim` | ✅ | Ships `/var/log/audit/audit.log` and `/var/log/auth.log` to Logstash. Config in `infra/filebeat/filebeat.yml`. Verified: a command typed on the victim is searchable in Splunk within seconds with the correct time |
-| Splunk detections (SPL) | 🔧 | Two detections written (see `detections.md`): the `./splunkd` masquerading rule is proven; the discovery-burst rule still needs a full Discovery run. Alert save and webhook action are next |
-| Discord bot | 🔧 | Migrated to Splunk webhook, SQLite store, `/hunt` and SSH isolation (see `bot-refactor-plan.md`); not yet run against live Splunk or the victim VM |
+| Splunk detections (SPL) | ✅ | Two detections proven on real Caldera attack data and saved as scheduled alerts (see `detections.md`; copy in `infra/siem/splunk/savedsearches.conf`). Both alerts also run the custom alert action `soc_bot_webhook` (app in `infra/siem/splunk/soc_bot_alert/`), which posts them to the bot; a real Discovery alert reached Discord end to end |
+| Discord bot | 🔧 | Migrated to Splunk webhook, SQLite store, `/hunt` and SSH isolation (see `bot-refactor-plan.md`); now installed on `soc-siem`, connected to a private Discord server and receiving real Splunk alerts (cards, buttons, `/soc-help` proven); isolation on the victim not yet tested |
 
 ## Design decisions
 
@@ -81,6 +81,7 @@ The host-only network is isolated from the real LAN, so the attack simulation ca
 - [plain-language-overview.md](plain-language-overview.md): the project explained without jargon.
 - [lab-build-log.md](lab-build-log.md): how the VMs, Caldera and the bot work were built, step by step.
 - [troubleshooting.md](troubleshooting.md): problems hit during the build, with causes and fixes.
+- [discord-setup.md](discord-setup.md): the Discord application, private server, roles and the bot's `.env`.
 - [security-review.md](security-review.md): findings from reviewing the bot, how each was fixed, and what is still open.
 - [bot-refactor-plan.md](bot-refactor-plan.md): the original plan for moving the bot from Azure to this lab.
 - [lab-operations.md](lab-operations.md): starting, using and stopping the lab day to day.
