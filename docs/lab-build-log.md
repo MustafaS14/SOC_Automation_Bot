@@ -414,9 +414,24 @@ Splunk's built-in webhook cannot add a header, so a small custom alert action, `
 
 Notes: a second Acknowledge on the same alert produces a harmless 409 in the bot log; and `grep -a` is needed on audit logs because they can contain binary bytes.
 
-## 19. Next
+## 19. A Caldera-driven alert and a demo run
+
+A full run from a cold start, done for a demo, showed what a restart of the lab really needs:
+
+- **Clocks.** `soc-victim` and `soc-attacker` had been resumed from saved states. The victim still showed 2 November, so its events were stamped two days in the past and Splunk's 15-minute searches found nothing. `timedatectl` said *synchronized: yes* because the host-only network has no NTP server. A cold boot fixed it. Every VM needs a `date -u` check, not only `soc-siem`.
+- **The old bot came back.** The bot that was running when `soc-siem` was saved resumed with it, so starting a second copy failed with *address already in use*.
+- **The agent in the background.** Pasted into an SSH window, the Sandcat agent stops with the window. Starting it with `nohup` from the home folder keeps it alive. Two agents at once make every operation step run twice.
+- **Alert timing.** The Masquerading card (#4) arrived about 5 minutes after the agent started; a later start was silent until the 30-minute throttle ended (card #6). Searches run every 5 minutes and look back 15; with a throttle of 5 minutes, one burst posted three cards (#7 to #9). See [lab-operations.md](lab-operations.md#when-a-card-appears).
+- **Caldera drives the Discovery alert.** The built-in Caldera Discovery adversary only repeated `ps` on Linux. A custom ability (`whoami; id; uname -a; hostname; ip a`) in an adversary profile, started as an operation, produced the three techniques by itself and a Discovery card in Discord. Steps in [scenario 02](../attack-scenarios/02-soc-demo-discovery.md).
+
+## 20. Next
 
 - Run the bot as a systemd service on `soc-siem` instead of by hand.
+- Put the alert throttle back to its normal value (30 minutes) after demos.
+- Richer cards: show the commands and techniques on the Discord card (the Discovery search already returns `what` and `commands`; the bot reads only `host`, `src_ip`, `severity`).
+- Connect the whole operation to the existing web UI and relay the Claude Code assistant to it.
+- A sturdier Masquerading search: check the real executable path, not the typed name `./splunkd`.
+- GitHub Actions for the tests and lint.
 - Watch the host's memory: the SIEM crashes and the victim's failed starts point to Windows running out of commit (see section 16). Cap WSL's memory with a `.wslconfig` and keep the page file large.
 - Add detection 3 (shell history cleared, T1070.003) and decide whether to tighten the discovery threshold.
 - Create the `responder` user on the victim from [`infra/responder/`](../infra/responder/); run the bot in real mode; test isolation from a snapshot first.
