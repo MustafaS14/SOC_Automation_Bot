@@ -450,3 +450,129 @@ def test_the_loading_animation_is_in_the_page_and_respects_reduced_motion(stack)
     css = Path(__file__).parent.parent.joinpath("soc_web", "static", "style.css").read_text(encoding="utf-8")
     assert "@keyframes o-x" in css and "prefers-reduced-motion: reduce" in css
     assert re.search(r"prefers-reduced-motion: reduce\) \{[^}]*\.o-rocket[^}]*animation: none", css)
+
+
+# ---- one question at a time, ownership of a remembered conversation number, and no automatic retries --------------
+
+import asyncio  # noqa: E402
+import threading  # noqa: E402
+
+
+def blocking_assistant(backends):
+    """Replace the assistant's ask() with one that waits until released, counting how often it is called."""
+    state = {"calls": 0, "started": threading.Event(), "release": threading.Event()}
+    real = backends.assistant.ask
+
+    async def slow(question, level, user_id, **kw):
+        state["calls"] += 1
+        state["started"].set()
+        while not state["release"].is_set():
+            await asyncio.sleep(0.02)
+        return await real(question, level, user_id, **kw)
+
+    backends.assistant.ask = slow
+    return state
+
+
+def test_only_one_question_per_user_runs_at_a_time_and_a_refused_one_costs_nothing(stack):  # noqa: F811
+    app, backends, _ = stack
+    backends.assistant._user_limit = 2
+    state = blocking_assistant(backends)
+    first, _ = login(app, "read")
+    second_tab, _ = login(app, "read")  # the same account in another tab or after a reload
+    other_user, _ = login(app, "triage")
+    results = {}
+    worker = threading.Thread(target=lambda: results.update(first=chat(first, "Summarise incident 1")))
+    worker.start()
+    assert state["started"].wait(5)
+    busy = chat(second_tab, "Summarise incident 1")
+    assert busy.status_code == 429 and "still being answered" in busy.get_json()["error"]
+    assert chat(first, "double click", conversation=listed(first)[0]["id"]).status_code == 429
+    assert state["calls"] == 1  # neither extra attempt reached the assistant
+    pending = first.get(f"/chat/conversations/{listed(first)[0]['id']}").get_json()
+    assert pending["pending"] is True and [m["role"] for m in pending["messages"]] == ["user"]
+    state["release"].set()  # another user is not held up by this one
+    assert chat(other_user, "Which incidents are open?").status_code == 200
+    worker.join(10)
+    assert results["first"].status_code == 200
+    # the refused attempts did not use the hourly limit (2): this is the second real question, and it is allowed
+    assert chat(first, "Which incidents are open?").get_json()["answer"]["outcome"] == "answered"
+    assert chat(first, "one more").get_json()["answer"]["outcome"] == "rate_limited"  # the limit itself still applies
+
+
+def test_a_failed_question_frees_the_user_to_ask_again_but_is_not_asked_again_by_itself(stack):  # noqa: F811
+    app, backends, _ = stack
+    client, _ = login(app, "read")
+    calls = []
+
+    async def broken(*args, **kwargs):
+        calls.append(1)
+        raise TimeoutError("relay too slow")
+
+    backends.assistant.ask = broken
+    assert chat(client, "Summarise incident 1").status_code == 400
+    made = listed(client)[0]["id"]
+    for _poll in range(5):  # the chat polls for an answer by reading, which must never start another one
+        assert client.get(f"/chat/conversations/{made}").status_code == 200
+    assert len(calls) == 1
+    assert chat(client, "Summarise incident 1", conversation=made).status_code == 400  # a person pressed Send again
+    assert len(calls) == 2
+
+
+def test_polling_never_calls_the_assistant_and_the_script_asks_only_from_the_send_button(stack):  # noqa: F811
+    app, backends, users = stack
+    spy = spy_on(backends)
+    client, _ = login(app, "read")
+    store = ConversationStore(users)
+    uid = _uid(users, "read")
+    made = store.create(uid, Permission.READ, "waiting").id
+    store.add(uid, Permission.READ, made, "user", "waiting")
+    for _poll in range(4):
+        assert client.get(f"/chat/conversations/{made}").get_json()["pending"] is True
+        client.get("/chat/conversations")
+        client.get("/chat/context?path=/incidents/1")
+    assert spy.prompts == []
+    js = Path(__file__).parent.parent.joinpath("soc_web", "static", "chat.js").read_text(encoding="utf-8")
+    assert js.count('"/chat/ask"') == 1 and "retry" not in js.lower()
+    assert 'api("POST", "/chat/ask"' in js and js.index('api("POST", "/chat/ask"') > js.index('addEventListener("submit"')
+
+
+def test_a_remembered_conversation_number_only_works_for_its_owner_at_their_current_role(stack):  # noqa: F811
+    """What the tab remembers is just a number, so the server must refuse a number that is not this user's now."""
+    app, _, users = stack
+    owner, _ = login(app, "admin")
+    mine = chat(owner, "What did the audit log record today?").get_json()["conversation"]["id"]
+    for name in ("viewer", "read", "triage"):  # other users, whatever their role
+        other, _ = login(app, name)
+        assert other.get(f"/chat/conversations/{mine}").status_code == 404
+        assert chat(other, "continue", conversation=mine).status_code == 404
+        assert jpost(other, f"/chat/conversations/{mine}/archive", {"archived": True}).status_code == 404
+    assert [c["id"] for c in listed(owner)] == [mine]  # untouched
+    users.set_tier("admin", "triage")  # the owner at a different role
+    assert owner.get(f"/chat/conversations/{mine}").status_code == 404
+    assert chat(owner, "continue", conversation=mine).status_code == 404
+    users.set_tier("admin", "admin")
+    assert owner.get(f"/chat/conversations/{mine}").status_code == 200
+    assert owner.get("/chat/conversations/0").status_code == 404 and owner.get("/chat/conversations/-1").status_code == 404
+
+
+def test_the_list_says_which_conversation_has_a_question_being_answered(stack):  # noqa: F811
+    """A new chat has no number until its first answer is back, so a page opened meanwhile finds it through the list."""
+    app, _, users = stack
+    client, _ = login(app, "read")
+    store = ConversationStore(users)
+    uid = _uid(users, "read")
+    waiting = store.create(uid, Permission.READ, "first question of a new chat").id
+    store.add(uid, Permission.READ, waiting, "user", "first question of a new chat")
+    done = store.create(uid, Permission.READ, "finished").id
+    store.add(uid, Permission.READ, done, "user", "finished")
+    store.add(uid, Permission.READ, done, "assistant", "answer")
+    flags = {c["id"]: c["pending"] for c in listed(client)}
+    assert flags == {waiting: True, done: False}
+    store.add(uid, Permission.READ, waiting, "assistant", "answer")
+    assert not any(c["pending"] for c in listed(client))
+    other_tier = store.create(uid, Permission.ADMIN, "asked as admin")
+    store.add(uid, Permission.ADMIN, other_tier.id, "user", "asked as admin")
+    assert other_tier.id not in {c["id"] for c in listed(client)}  # another role's pending question is not shown
+    someone_else, _ = login(app, "triage")
+    assert listed(someone_else) == []

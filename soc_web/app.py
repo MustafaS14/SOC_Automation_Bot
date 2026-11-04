@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -44,7 +45,7 @@ from soc_bot.validators import ValidationError, parse_incident_ref, parse_ip
 from . import pagecontext
 from .answers import parse_answer, pretty
 from .config import WebSettings
-from .conversations import MAX_MESSAGES, Chat, ChatError, ConversationStore
+from .conversations import MAX_MESSAGES, Chat, ChatBusy, ChatError, ConversationStore
 from .memory import ConversationMemory
 from .runtime import Backends
 from .security import Throttle, add_headers, check_csrf, csrf_token
@@ -217,6 +218,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     memory = ConversationMemory()
     chats = ConversationStore(users)
     recent_results = pagecontext.RecentResults()
+    asking: set[int] = set()  # users with a question being answered right now: one at a time, whichever tab or page
+    asking_lock = threading.Lock()
     avatar = "bot-avatar.png" if (Path(app.static_folder or "") / "bot-avatar.png").is_file() else None
 
     # ---- helpers ------------------------------------------------------------------------------------------
@@ -546,21 +549,33 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
             raise ValidationError("Ask a question first.")
         if len(plain) > MAX_QUESTION_CHARS:
             raise ValidationError(f"Keep the question under {MAX_QUESTION_CHARS} characters.")
-        # The question is saved before the (possibly slow) answer is fetched. If the user opens another page while
-        # it runs, the answer still lands in the conversation and the chat can pick it up again.
-        if chat is None:
-            chat = chats.create(uid, tier, question)
-            audit("chat.new", f"#{chat.id}", via=via)
-        chats.add(uid, tier, chat.id, "user", question, page=page.label if page else None)
+        # One question at a time per user, across tabs and pages: a double click or a quick reload cannot start a
+        # second call to the assistant (or the relay) while the first is still running. This check comes before
+        # anything is stored or counted against the hourly limit.
+        with asking_lock:
+            if uid in asking:
+                raise ChatBusy("Your previous question is still being answered. Wait for it to finish.")
+            asking.add(uid)
         try:
-            answer = call(
-                backends.assistant.ask(question, tier, uid, history=history,
-                                       page=(page.label, page.text) if page else None),
-                timeout=backends.settings.ai_timeout + 30,
-            )
-        except Exception:
-            chats.add(uid, tier, chat.id, "assistant", "The assistant did not answer. Try again.")
-            raise
+            # The question is saved before the (possibly slow) answer is fetched. If the user opens another page
+            # while it runs, the answer still lands in the conversation and the chat can pick it up again.
+            if chat is None:
+                chat = chats.create(uid, tier, question)
+                audit("chat.new", f"#{chat.id}", via=via)
+            chats.add(uid, tier, chat.id, "user", question, page=page.label if page else None)
+            try:
+                answer = call(
+                    backends.assistant.ask(question, tier, uid, history=history,
+                                           page=(page.label, page.text) if page else None),
+                    timeout=backends.settings.ai_timeout + 30,
+                )
+            except Exception:
+                # Stored so the chat stops waiting. Nothing asks again: only a person pressing Send does.
+                chats.add(uid, tier, chat.id, "assistant", "The assistant did not answer. Try again.")
+                raise
+        finally:
+            with asking_lock:
+                asking.discard(uid)
         audit("ai.ask", LEVEL_LABELS[tier], answer.outcome, tools=",".join(answer.tools_used) or None,
               denied=True if answer.denied else None, calls=answer.calls, followup=len(history) or None,
               question=question[:200], page=page.label if page else None, conversation=chat.id, via=via)
@@ -680,8 +695,10 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     @needs(Permission.VIEWER)
     def chat_list():
         archived = request.args.get("archived") == "1"
+        waiting = chats.pending_ids(g.user.id, g.user.tier, backends.settings.ai_timeout + 60)
         return jsonify(enabled=backends.assistant is not None,
-                       conversations=[chat_dict(c) for c in chats.list(g.user.id, g.user.tier, archived=archived)])
+                       conversations=[{**chat_dict(c), "pending": c.id in waiting}
+                                      for c in chats.list(g.user.id, g.user.tier, archived=archived)])
 
     @app.get("/chat/conversations/<int:chat_id>")
     @needs(Permission.VIEWER)
@@ -744,6 +761,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         page = page_context(str(body.get("path", ""))) if body.get("use_page") is True else None
         try:
             chat, answer, _ = ask_and_record(question, chat_id_from(body.get("conversation")), page=page, via="widget")
+        except ChatBusy as exc:
+            return json_error(str(exc), 429)
         except ChatError as exc:
             return json_error(str(exc), 404 if "exist" in str(exc) else 400)
         except HANDLED as exc:

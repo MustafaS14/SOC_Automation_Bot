@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from soc_bot.ai import Exchange
 from soc_bot.audit import redact
@@ -51,6 +51,10 @@ CREATE INDEX IF NOT EXISTS chat_messages_chat ON chat_messages (chat_id, id);
 
 class ChatError(ValueError):
     """A message safe to show the user."""
+
+
+class ChatBusy(ChatError):
+    """The user already has a question being answered."""
 
 
 @dataclass(frozen=True)
@@ -120,6 +124,19 @@ class ConversationStore:
                 (user_id, int(tier), title, now, now),
             )
         return Chat(int(cur.lastrowid), title, now, now, False)
+
+    def pending_ids(self, user_id: int, tier: Permission, within_seconds: float) -> set[int]:
+        """Conversations of this user at this tier whose last message is their own recent question, which no answer
+        has followed yet."""
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=within_seconds)).isoformat(timespec="seconds")
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT c.id FROM chats c JOIN chat_messages m "
+                "ON m.id = (SELECT MAX(id) FROM chat_messages WHERE chat_id = c.id) "
+                "WHERE c.user_id = ? AND c.tier = ? AND c.archived = 0 AND m.role = 'user' AND m.created > ?",
+                (user_id, int(tier), cutoff),
+            ).fetchall()
+        return {r[0] for r in rows}
 
     def messages(self, user_id: int, tier: Permission, chat_id: int) -> list[Message]:
         with self._lock:

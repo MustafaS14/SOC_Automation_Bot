@@ -154,7 +154,8 @@
   function loadList() {
     return api("GET", "/chat/conversations" + (state.archived ? "?archived=1" : "")).then(function (data) {
       renderList(data.conversations);
-    }).catch(function (e) { show(e.message); });
+      return data.conversations;
+    }).catch(function (e) { show(e.message); return []; });
   }
 
   function openConversation(id, quiet) {
@@ -270,6 +271,16 @@
   if (ui.open) {
     panel.classList.add("restored");
     openPanel(true);
-    if (ui.conversation) { openConversation(ui.conversation, true); }
+    if (ui.conversation) {
+      openConversation(ui.conversation, true);
+    } else {
+      // The first question of a new chat has no number until its answer is back, so if the page changed meanwhile
+      // the number is unknown here. The server says which conversation still has a question being answered.
+      loadList().then(function (list) {
+        for (var i = 0; i < list.length; i += 1) {
+          if (list[i].pending && state.conversation === null) { openConversation(list[i].id, true); break; }
+        }
+      });
+    }
   }
 }());
