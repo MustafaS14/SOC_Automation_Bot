@@ -14,13 +14,13 @@ Different people at work see different things. A manager may see summaries and c
 
 | Question | Decision | Why |
 |---|---|---|
-| How does the bot reach Claude? | Through **Claude Code in non-interactive mode** (`claude -p`) installed on the SIEM VM, logged in with a personal subscription | No API key needed for a personal project. The login belongs to the supported tool; the bot never handles the token |
+| How does the bot reach Claude? | Through **Claude Code in non-interactive mode** (`claude -p`) installed on the owner's own PC (not the SIEM VM), logged in with a personal subscription | No API key needed for a personal project. The login belongs to the supported tool; the bot never handles the token |
 | Can the AI take actions? | **No, at any level** | Mistakes or manipulated logs must not be able to cause harm |
 | What does it use to look things up? | Only the bot's existing safe, read-only functions (show incident, list incidents, fixed hunt templates, IP reputation) | The AI cannot run arbitrary searches. Proposing searches for a human to review is a possible later step |
 | Where are the limits enforced? | **In code**, not by asking the AI to behave | A prompt is a request; a missing tool is a wall |
 | What if the backend changes later? | The AI part sits behind a small interface with two backends (Claude Code, or an API key) and a mock backend for tests | Nothing depends on one choice |
 
-Open point: Anthropic's terms for automated, always-on use of Claude Code on a personal plan must be checked by the project owner before the real backend is switched on. Until then the mock backend is used.
+Terms check (closed for this design): the project owner's reading of Anthropic's terms is that a personal subscription login is for your own use of the unmodified Claude Code. So the real backend runs only on the owner's own PC, for the owner, when the owner asks a question. It is not run on `soc-siem`, for other users, or automatically. Everything else uses the mock backend. With the real backend, question and page text (after redaction) go to Anthropic.
 
 ## What people can ask
 
@@ -160,5 +160,5 @@ WHEN UNSURE
 2. The AI module in the bot with a **mock backend** and tests (no VM, no subscription needed).
 3. The shared permission policy, used by the bot first and the dashboard later.
 4. Real alerts flowing from Splunk (first detection and webhook).
-5. On `soc-siem`: install Claude Code, log in interactively, switch the bot from the mock to the real backend, after the terms check.
+5. Real backend: only on the owner's own PC (Claude Code logged in there, `AI_BACKEND=claude_code`). Not on `soc-siem`: see the terms check above.
 6. Demonstration dashboard with the AI panel behind the same permission policy.
