@@ -32,7 +32,12 @@ class AiBackend(Protocol):
 _BUILTIN_TOOLS = (
     "Bash Edit MultiEdit Write Read Glob Grep NotebookEdit WebFetch WebSearch Task TodoWrite BashOutput KillShell"
 )
-_ENV_KEEP = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
+# Only what Claude Code needs to start and find its own login; none of it is a secret. The Windows names let a
+# development run on a Windows PC start (the VM runs Linux and ignores them).
+_ENV_KEEP = (
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+    "SYSTEMROOT", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP", "COMSPEC", "PATHEXT",
+)
 _MAX_OUTPUT = 20_000
 
 
