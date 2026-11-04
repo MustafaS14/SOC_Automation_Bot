@@ -2,11 +2,11 @@ import pytest
 
 from soc_bot.config import ConfigError, Settings
 
-BASE = dict(
-    discord_token="t", guild_id=None, allowed_channel_ids=frozenset({1}), audit_channel_id=None,
-    read_role_ids=frozenset({1}), triage_role_ids=frozenset(), response_role_ids=frozenset(),
-    isolation_denylist=(), mock_mode=False, webhook_secret="s",
-)
+BASE = {
+    "discord_token": "t", "guild_id": None, "allowed_channel_ids": frozenset({1}), "audit_channel_id": None,
+    "read_role_ids": frozenset({1}), "triage_role_ids": frozenset(), "response_role_ids": frozenset(),
+    "isolation_denylist": (), "mock_mode": False, "webhook_secret": "s",
+}
 
 
 def test_valid_minimal_config():

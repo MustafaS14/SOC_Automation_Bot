@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import threading
 from collections.abc import Coroutine
@@ -46,10 +47,8 @@ class AsyncRunner:
                     task.cancel()
             await asyncio.sleep(0)
 
-        try:
+        with contextlib.suppress(Exception):  # shutting down anyway
             asyncio.run_coroutine_threadsafe(cancel_pending(), self._loop).result(2)
-        except Exception:  # shutting down anyway
-            pass
         self._loop.call_soon_threadsafe(self._loop.stop)
         self._thread.join(timeout=5)
         self._loop.close()

@@ -13,7 +13,17 @@ from functools import wraps
 from typing import Any
 from urllib.parse import urlsplit
 
-from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
+from flask import (
+    Flask,
+    abort,
+    flash,
+    g,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
@@ -30,8 +40,8 @@ from soc_bot.validators import ValidationError, parse_incident_ref, parse_ip
 
 from .answers import parse_answer, pretty
 from .config import WebSettings
-from .runtime import Backends
 from .memory import ConversationMemory
+from .runtime import Backends
 from .security import Throttle, add_headers, check_csrf, csrf_token
 from .status import StatusProbe
 from .users import UserStore

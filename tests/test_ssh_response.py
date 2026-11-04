@@ -5,8 +5,7 @@ from unittest.mock import AsyncMock
 import asyncssh
 import pytest
 
-from soc_bot.clients import APIError, NotFoundError, SshResponseClient
-from soc_bot.clients import ssh_response
+from soc_bot.clients import APIError, NotFoundError, SshResponseClient, ssh_response
 
 INVENTORY = {"soc-victim": "192.168.56.20", "srv1.corp.local": "10.0.0.5"}
 

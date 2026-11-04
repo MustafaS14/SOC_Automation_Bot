@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 
@@ -139,7 +140,7 @@ def test_acknowledge_comment_and_audit(stack):
     assert inc.status == "Active" and inc.assignee == "triage@web"
     assert inc.comments[-1].author == "triage@web" and inc.comments[-1].body == "Looks like recon"
     backends.audit_log.close()
-    lines = [json.loads(line) for line in open(backends.settings.audit_log_path, encoding="utf-8")]
+    lines = [json.loads(line) for line in Path(backends.settings.audit_log_path).read_text(encoding="utf-8").splitlines()]
     actions = {(e["action"], e["actor"], e["channel"]) for e in lines}
     assert ("incident.ack", "triage", "web") in actions and ("incident.comment", "triage", "web") in actions
 
@@ -267,7 +268,7 @@ def test_failed_login_is_audited_without_the_password(stack):
     app, backends, _ = stack
     login(app, "triage", "hunter2 hunter2 hunter2")
     backends.audit_log.close()
-    text = open(backends.settings.audit_log_path, encoding="utf-8").read()
+    text = Path(backends.settings.audit_log_path).read_text(encoding="utf-8")
     assert '"outcome": "denied"' in text and "hunter2" not in text
 
 
@@ -430,14 +431,13 @@ def test_forwarded_address_is_trusted_only_when_a_proxy_is_declared(stack):
         client.post("/login", data={"username": "nobody", "password": "x" * 12, "csrf_token": token(page)},
                     headers={"X-Forwarded-For": "6.6.6.6"})
     backends.audit_log.close()
-    ips = [json.loads(line)["ip"] for line in open(backends.settings.audit_log_path, encoding="utf-8")]
+    ips = [json.loads(line)["ip"] for line in Path(backends.settings.audit_log_path).read_text(encoding="utf-8").splitlines()]
     assert ips == ["127.0.0.1", "6.6.6.6"]
 
 
 def _seed_audit(backends, entries):
     with open(backends.settings.audit_log_path, "a", encoding="utf-8") as f:
-        for e in entries:
-            f.write(json.dumps(e) + "\n")
+        f.writelines(json.dumps(e) + "\n" for e in entries)
 
 
 def _entry(i, **over):
@@ -552,7 +552,7 @@ def test_ask_shows_level_and_examples_that_fit_it(stack):
 
 
 def test_example_link_fills_the_box_without_asking(stack):
-    app, backends, _ = stack
+    app, _backends, _ = stack
     client, _ = login(app, "viewer")
     html = client.get('/ask?q=How%20many%20incidents%3F%22%3E%3Cscript%3E').get_data(as_text=True)
     assert "How many incidents?&#34;&gt;&lt;script&gt;" in html and "<script>" not in html

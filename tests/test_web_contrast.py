@@ -14,7 +14,7 @@ COLORS["denied-row"] = tuple(round(f * .12 + b * .88) for f, b in zip(COLORS["re
 
 
 def _luminance(c):
-    f = lambda x: x / 255 / 12.92 if x / 255 <= .03928 else ((x / 255 + .055) / 1.055) ** 2.4  # noqa: E731
+    f = lambda x: x / 255 / 12.92 if x / 255 <= .03928 else ((x / 255 + .055) / 1.055) ** 2.4
     r, g, b = map(f, c)
     return .2126 * r + .7152 * g + .0722 * b
 
@@ -56,9 +56,9 @@ def test_the_refusal_panel_colour_in_the_test_matches_the_stylesheet():
 
 # ---- rendered pages: labels and "not by colour alone" ----------------------------------------------------------
 
-from html.parser import HTMLParser  # noqa: E402
+from html.parser import HTMLParser
 
-from .web_helpers import login, post, stack  # noqa: E402, F401
+from .web_helpers import login, post, stack  # noqa: F401
 
 
 class _Fields(HTMLParser):

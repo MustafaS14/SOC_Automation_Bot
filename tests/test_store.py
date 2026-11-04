@@ -31,7 +31,7 @@ async def test_status_filters(store):
     await store.acknowledge(active.id, "a")
     await store.close(closed.id, "benign", "ok", "a")
 
-    ids = lambda items: sorted(i.id for i in items)  # noqa: E731
+    ids = lambda items: sorted(i.id for i in items)
     assert ids(await store.list(status="open")) == ids([new, active])
     assert ids(await store.list(status="new")) == [new.id]
     assert ids(await store.list(status="active")) == [active.id]
@@ -121,7 +121,7 @@ async def test_list_orders_and_rejects_unknown_order():
     store = IncidentStore(":memory:")
     for rule, sev in (("a", "Low"), ("b", "High"), ("c", "Medium"), ("d", "High")):
         await store.create(rule=rule, severity=sev)
-    names = lambda rows: [i.rule for i in rows]  # noqa: E731
+    names = lambda rows: [i.rule for i in rows]
     assert names(await store.list("all", None, 10, "newest")) == ["d", "c", "b", "a"]
     assert names(await store.list("all", None, 10, "oldest")) == ["a", "b", "c", "d"]
     assert names(await store.list("all", None, 10, "severity")) == ["d", "b", "c", "a"]

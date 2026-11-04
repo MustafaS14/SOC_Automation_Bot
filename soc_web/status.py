@@ -29,7 +29,7 @@ class StatusProbe:
                 try:
                     await asyncio.wait_for(self._b.splunk.search("| makeresults count=1", earliest="-1m"), PROBE_TIMEOUT)
                     self.splunk = "up"
-                except Exception:
+                except Exception:  # noqa: BLE001 - any failure of the probe means Splunk is not answering
                     self.splunk = "down"
             newest = await self._b.store.list("all", None, 1)
             self.last_alert = newest[0].created if newest else None

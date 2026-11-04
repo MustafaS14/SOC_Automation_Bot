@@ -1,11 +1,17 @@
 """Follow-up memory on the Ask page: what is kept, what is dropped, and that it can never widen access."""
 
 import re
+from pathlib import Path
 
 import pytest
 
 from soc_bot.ai import Exchange
-from soc_bot.ai.assistant import MAX_HISTORY_ANSWER, MAX_HISTORY_QUESTION, Assistant, build_prompt
+from soc_bot.ai.assistant import (
+    MAX_HISTORY_ANSWER,
+    MAX_HISTORY_QUESTION,
+    Assistant,
+    build_prompt,
+)
 from soc_bot.ai.backends import MockBackend
 from soc_bot.ai.tools import ToolContext
 from soc_bot.rbac import Permission
@@ -13,7 +19,6 @@ from soc_web.app import EXAMPLES, FOLLOW_UP_EXAMPLE
 from soc_web.memory import MAX_USERS, ConversationMemory
 
 from .web_helpers import login, post, stack  # noqa: F401
-
 
 # ---- the memory itself -----------------------------------------------------------------------------------------
 
@@ -80,7 +85,7 @@ def test_no_history_means_no_block():
     assert "<earlier_exchanges>" not in build_prompt(Permission.READ, "q", [])
 
 
-async def test_assistant_passes_history_to_the_backend(stack):  # noqa: F811
+async def test_assistant_passes_history_to_the_backend(stack):
     _, backends, _ = stack
     seen = []
 
@@ -136,7 +141,7 @@ def _ask(client, question):
     return post(client, "/ask", "/ask", question=question).get_data(as_text=True)
 
 
-def test_follow_up_explains_the_previous_answer_for_the_same_user(stack):  # noqa: F811
+def test_follow_up_explains_the_previous_answer_for_the_same_user(stack):
     app, _, _ = stack
     client, _ = login(app, "admin")
     first = _ask(client, "What did the audit log record today?")
@@ -147,7 +152,7 @@ def test_follow_up_explains_the_previous_answer_for_the_same_user(stack):  # noq
     assert _example_link in client.get("/ask").get_data(as_text=True)
 
 
-def test_without_an_earlier_question_there_is_nothing_to_explain_and_no_example(stack):  # noqa: F811
+def test_without_an_earlier_question_there_is_nothing_to_explain_and_no_example(stack):
     app, _, _ = stack
     client, _ = login(app, "admin")
     html = _ask(client, "Explain the output to me better")
@@ -155,7 +160,7 @@ def test_without_an_earlier_question_there_is_nothing_to_explain_and_no_example(
     assert _example_link not in html
 
 
-def test_lowering_the_tier_drops_what_was_seen_at_the_higher_level(stack):  # noqa: F811
+def test_lowering_the_tier_drops_what_was_seen_at_the_higher_level(stack):
     app, _, users = stack
     client, _ = login(app, "admin")
     _ask(client, "What did the audit log record today?")
@@ -165,7 +170,7 @@ def test_lowering_the_tier_drops_what_was_seen_at_the_higher_level(stack):  # no
     assert _example_link not in html
 
 
-def test_another_account_never_sees_someone_elses_history(stack):  # noqa: F811
+def test_another_account_never_sees_someone_elses_history(stack):
     app, _, _ = stack
     admin, _ = login(app, "admin")
     _ask(admin, "What did the audit log record today?")
@@ -174,7 +179,7 @@ def test_another_account_never_sees_someone_elses_history(stack):  # noqa: F811
     assert "scripted mock explanation" not in html
 
 
-def test_refusals_are_not_remembered(stack):  # noqa: F811
+def test_refusals_are_not_remembered(stack):
     app, _, _ = stack
     client, _ = login(app, "viewer")
     refused = _ask(client, "Which host is affected by incident 1?")
@@ -183,7 +188,7 @@ def test_refusals_are_not_remembered(stack):  # noqa: F811
     assert "scripted mock explanation" not in html
 
 
-def test_forget_and_logout_clear_the_memory(stack):  # noqa: F811
+def test_forget_and_logout_clear_the_memory(stack):
     app, _, _ = stack
     client, _ = login(app, "admin")
     _ask(client, "What did the audit log record today?")
@@ -195,20 +200,20 @@ def test_forget_and_logout_clear_the_memory(stack):  # noqa: F811
     assert "scripted mock explanation" not in _ask(again, "Explain the output to me better")
 
 
-def test_forget_needs_a_csrf_token_and_a_signed_in_user(stack):  # noqa: F811
+def test_forget_needs_a_csrf_token_and_a_signed_in_user(stack):
     app, _, _ = stack
     client, _ = login(app, "viewer")
     assert client.post("/ask/forget").status_code == 400
     assert app.test_client().post("/ask/forget").status_code == 400
 
 
-def test_audit_records_that_a_question_was_a_follow_up(stack):  # noqa: F811
+def test_audit_records_that_a_question_was_a_follow_up(stack):
     app, backends, _ = stack
     client, _ = login(app, "admin")
     _ask(client, "What did the audit log record today?")
     _ask(client, "Explain the output to me better")
     backends.audit_log.close()
-    text = open(backends.settings.audit_log_path, encoding="utf-8").read()
+    text = Path(backends.settings.audit_log_path).read_text(encoding="utf-8")
     assert '"followup": 1' in text
 
 
@@ -218,7 +223,7 @@ REFUSED = re.compile(r"Not allowed at your level|Not something I can help with")
 
 
 @pytest.mark.parametrize("tier", ["viewer", "read", "triage", "response", "admin"])
-def test_every_example_link_gets_a_real_answer_or_an_intended_refusal(stack, tier):  # noqa: F811
+def test_every_example_link_gets_a_real_answer_or_an_intended_refusal(stack, tier):
     """No example leaves a demo user at a dead end: it is answered by the mock, or it is the deliberate refusal demo."""
     app, _, users = stack
     if tier == "response":

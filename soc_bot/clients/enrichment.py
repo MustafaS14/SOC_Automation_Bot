@@ -16,7 +16,7 @@ def _dict_at(body: Any, *keys: str) -> dict[str, Any]:
     for key in keys:
         body = body.get(key) if isinstance(body, dict) else None
     if not isinstance(body, dict):
-        raise ValueError("unexpected response shape")
+        raise ValueError("unexpected response shape")  # noqa: TRY004 - callers catch ValueError
     return body
 
 

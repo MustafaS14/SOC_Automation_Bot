@@ -15,7 +15,13 @@ from .. import hunts
 from ..audit import read_recent
 from ..clients import APIError, NotFoundError
 from ..rbac import Permission
-from ..validators import ValidationError, is_protected_host, parse_hostname, parse_incident_ref, parse_ip
+from ..validators import (
+    ValidationError,
+    is_protected_host,
+    parse_hostname,
+    parse_incident_ref,
+    parse_ip,
+)
 
 MAX_RESULT_CHARS = 6000
 _CELL = 300
@@ -120,9 +126,9 @@ async def _list_incidents(ctx: ToolContext, level: Permission, args: dict[str, A
 async def _get_incident(ctx: ToolContext, level: Permission, args: dict[str, Any]) -> str:
     inc = await ctx.store.get(parse_incident_ref(str(args.get("incident", ""))))
     lines = [
-        f"incident #{inc.id}: rule={_cut(inc.rule)}; severity={inc.severity}; status={inc.status}; "
+        (f"incident #{inc.id}: rule={_cut(inc.rule)}; severity={inc.severity}; status={inc.status}; "
         f"classification={inc.classification or 'n/a'}; host={inc.host or 'n/a'}; src_ip={inc.src_ip or 'n/a'}; "
-        f"assignee={inc.assignee or 'n/a'}; created={_when(inc.created)}; updated={_when(inc.updated)}",
+        f"assignee={inc.assignee or 'n/a'}; created={_when(inc.created)}; updated={_when(inc.updated)}"),
         f"description: {_cut(inc.description, 600) or 'n/a'}",
     ]
     for comment in inc.comments[-10:]:

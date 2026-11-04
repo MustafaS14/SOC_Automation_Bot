@@ -9,7 +9,6 @@ from logging.handlers import QueueHandler, QueueListener
 from pathlib import Path
 from typing import Any
 
-
 # Things that look like secrets are blanked before anything is written, because questions and comments are free text
 # and people paste keys into them. Not a guarantee, a safety net.
 _SECRET_PATTERNS = [re.compile(p, re.IGNORECASE) for p in (

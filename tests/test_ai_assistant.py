@@ -1,6 +1,13 @@
 import pytest
 
-from soc_bot.ai.assistant import MAX_ANSWER_CHARS, MAX_LOOKUPS, Assistant, build_prompt, parse_reply, split_plain_words
+from soc_bot.ai.assistant import (
+    MAX_ANSWER_CHARS,
+    MAX_LOOKUPS,
+    Assistant,
+    build_prompt,
+    parse_reply,
+    split_plain_words,
+)
 from soc_bot.ai.backends import BackendError, MockBackend
 from soc_bot.ai.prompt import DENIED_REPLY, OFF_TOPIC_REPLY, PLAIN_MARKER, SYSTEM_PROMPT
 from soc_bot.ai.tools import ToolContext

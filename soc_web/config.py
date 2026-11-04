@@ -6,8 +6,13 @@ from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
-from soc_bot.config import ConfigError, _bool, _int_default, reject_unresolved_references, secret
-
+from soc_bot.config import (
+    ConfigError,
+    _bool,
+    _int_default,
+    reject_unresolved_references,
+    secret,
+)
 
 LOOPBACK_HOSTS = ("127.0.0.1", "::1", "localhost")
 WILDCARD_HOSTS = ("", "0.0.0.0", "::")

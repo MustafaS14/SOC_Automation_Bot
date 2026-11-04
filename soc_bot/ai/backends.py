@@ -211,8 +211,8 @@ class MockBackend:
 
     async def complete(self, system: str, prompt: str) -> str:
         question = self._between(prompt, "<question>", "</question>").lower()
-        tools = set(re.findall(r"^- (\w+)\(", prompt, re.M))
-        lookups = re.findall(r'<log_data tool="(\w+)"[^>]*>\n(.*?)\n</log_data>', prompt, re.S)
+        tools = set(re.findall(r"^- (\w+)\(", prompt, re.MULTILINE))
+        lookups = re.findall(r'<log_data tool="(\w+)"[^>]*>\n(.*?)\n</log_data>', prompt, re.DOTALL)
 
         if lookups:
             data = lookups[-1][1]
@@ -227,7 +227,7 @@ class MockBackend:
             )
 
         if _FOLLOW_UP.search(question) and not any(w in question for w in _NEW_SUBJECT) and not re.search(r"\d", question):
-            earlier = re.findall(r'<exchange tools="([\w,]*)"><q>(.*?)</q><a>(.*?)</a></exchange>', prompt, re.S)
+            earlier = re.findall(r'<exchange tools="([\w,]*)"><q>(.*?)</q><a>(.*?)</a></exchange>', prompt, re.DOTALL)
             if earlier:
                 return _reply(_explain(earlier[-1][0], earlier[-1][2]))
             return _reply("(mock) Ask me something about the SOC first, then I can explain the answer.")

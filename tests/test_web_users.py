@@ -114,11 +114,11 @@ def test_web_settings_validation(monkeypatch):
 def test_settings_can_skip_discord_requirements():
     from soc_bot.config import Settings
 
-    base = dict(
-        discord_token="", guild_id=None, allowed_channel_ids=frozenset(), audit_channel_id=None,
-        read_role_ids=frozenset(), triage_role_ids=frozenset(), response_role_ids=frozenset(),
-        isolation_denylist=(), mock_mode=True,
-    )
+    base = {
+        "discord_token": "", "guild_id": None, "allowed_channel_ids": frozenset(), "audit_channel_id": None,
+        "read_role_ids": frozenset(), "triage_role_ids": frozenset(), "response_role_ids": frozenset(),
+        "isolation_denylist": (), "mock_mode": True,
+    }
     Settings(**base).validate(require_discord=False)
     with pytest.raises(ConfigError):
         Settings(**base).validate()

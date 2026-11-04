@@ -28,12 +28,12 @@ def main():
     )
     try:
         with urllib.request.urlopen(req, timeout=10) as r:
-            print("INFO soc_bot_webhook sent alert, status=%s" % r.status, file=sys.stderr)
+            print(f"INFO soc_bot_webhook sent alert, status={r.status}", file=sys.stderr)
     except urllib.error.HTTPError as e:
-        print("ERROR soc_bot_webhook HTTP %s" % e.code, file=sys.stderr)
+        print(f"ERROR soc_bot_webhook HTTP {e.code}", file=sys.stderr)
         return 1
-    except Exception as e:
-        print("ERROR soc_bot_webhook %s" % type(e).__name__, file=sys.stderr)
+    except Exception as e:  # noqa: BLE001 - Splunk only needs a non-zero exit and a log line
+        print(f"ERROR soc_bot_webhook {type(e).__name__}", file=sys.stderr)
         return 1
     return 0
 

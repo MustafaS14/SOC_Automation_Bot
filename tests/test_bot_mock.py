@@ -9,11 +9,11 @@ from soc_bot.models import Incident
 
 
 def make_settings(tmp_path, **overrides):
-    values = dict(
-        discord_token="t", guild_id=None, allowed_channel_ids=frozenset({1}), audit_channel_id=None,
-        read_role_ids=frozenset({1}), triage_role_ids=frozenset(), response_role_ids=frozenset(),
-        isolation_denylist=(), mock_mode=True, audit_log_path=str(tmp_path / "audit.jsonl"),
-    )
+    values = {
+        "discord_token": "t", "guild_id": None, "allowed_channel_ids": frozenset({1}), "audit_channel_id": None,
+        "read_role_ids": frozenset({1}), "triage_role_ids": frozenset(), "response_role_ids": frozenset(),
+        "isolation_denylist": (), "mock_mode": True, "audit_log_path": str(tmp_path / "audit.jsonl"),
+    }
     return Settings(**{**values, **overrides})
 
 

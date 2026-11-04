@@ -83,5 +83,5 @@ def test_strip_shows_real_values_on_every_page(stack):
     client, _ = login(app, "admin")
     for path in ("/", "/incidents", "/incidents?status=closed", "/incidents/1", "/hunt", "/enrich", "/ask", "/audit"):
         html = client.get(path).get_data(as_text=True)
-        strip = re.search(r'role="status".*?</div></div>', html, re.S).group(0)
+        strip = re.search(r'role="status".*?</div></div>', html, re.DOTALL).group(0)
         assert "<b>Mode</b> mock" in strip and "<b>AI</b> mock" in strip, path
