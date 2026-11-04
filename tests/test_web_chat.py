@@ -448,8 +448,12 @@ def test_the_loading_animation_is_in_the_page_and_respects_reduced_motion(stack)
     assert '<template id="chat-pending-tpl">' in html and "The assistant is thinking" in html
     assert 'role="status"' in html and 'aria-hidden="true"' in html and " style=" not in html
     css = Path(__file__).parent.parent.joinpath("soc_web", "static", "style.css").read_text(encoding="utf-8")
-    assert "@keyframes o-x" in css and "prefers-reduced-motion: reduce" in css
+    assert "@keyframes o-lap" in css and "prefers-reduced-motion: reduce" in css
     assert re.search(r"prefers-reduced-motion: reduce\) \{[^}]*\.o-rocket[^}]*animation: none", css)
+    # the rocket turns along its path instead of being mirrored, and one lap is quick
+    loader = css[css.index("loading animation:"):]
+    assert "offset-rotate: auto" in loader and "scaleX" not in loader
+    assert float(re.search(r"o-lap ([\d.]+)s linear infinite", loader).group(1)) <= 2.0
 
 
 # ---- one question at a time, ownership of a remembered conversation number, and no automatic retries --------------

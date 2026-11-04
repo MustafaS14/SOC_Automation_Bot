@@ -367,43 +367,36 @@ ul.examples a:hover, ul.examples a:focus-visible { border-color: var(--teal); co
 .chat #chat-send:hover { background: var(--cream); color: var(--ink); }
 .chat-fab img { transform: scale(1.32); } /* the logo has a wide dark margin; this lets the head fill the round button */
 
-/* ---------- loading animation: a rocket flying around a small planet, seen edge-on ----------
-   The rocket moves left to right in front of the planet (larger, brighter), turns at the edge, then moves right to left
-   behind it (smaller, dimmer, hidden by the planet). Four nested layers each animate one thing: sideways travel,
-   up-and-down tilt, size and direction, and (on the rocket itself) which side of the planet it is on. */
-.msg.pending { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 22px 10px; }
-.msg.pending .text { font-size: 13.5px; color: var(--muted); }
-.orbit { position: relative; width: 190px; height: 62px; isolation: isolate; }
-.o-path { position: absolute; left: 50%; top: 50%; width: 156px; height: 30px; margin: -15px 0 0 -78px; border-radius: 50%; border: 1px dashed rgba(143, 193, 181, .35); z-index: 0; }
+/* ---------- loading animation: a small rocket on a hairline orbit around a planet, seen at a slant ----------
+   The rocket follows an ellipse (CSS motion path) and turns smoothly along it, so its nose always points the way it
+   is flying. On the near half of the orbit it passes in front of the planet, a little larger and brighter; on the far
+   half it passes behind it, smaller and dimmer. One lap takes under two seconds. */
+.msg.pending { display: flex; align-items: center; gap: 14px; background: none; padding: 2px 0; max-width: none; }
+.msg.pending .text { white-space: nowrap; font: 600 11px/1.3 var(--display); letter-spacing: .16em; text-transform: uppercase; color: var(--teal); }
+.orbit { position: relative; width: 150px; height: 44px; flex: none; isolation: isolate; }
+.o-path { position: absolute; left: 13px; top: 11px; width: 124px; height: 22px; border-radius: 50%; border: 1px solid rgba(143, 193, 181, .26); z-index: 0; }
 .o-planet {
-  position: absolute; left: 50%; top: 50%; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%; z-index: 2;
-  background:
-    linear-gradient(115deg, transparent 0 34%, rgba(242, 217, 141, .55) 34% 42%, transparent 42% 56%, rgba(242, 217, 141, .35) 56% 62%, transparent 62%),
-    radial-gradient(circle at 34% 30%, #7f95c0 0%, #46597f 52%, #1f2a44 100%);
-  box-shadow: inset -5px -4px 9px rgba(0, 0, 0, .45), 0 0 14px rgba(143, 193, 181, .22);
+  position: absolute; left: 61px; top: 8px; width: 28px; height: 28px; border-radius: 50%; z-index: 2;
+  background: radial-gradient(circle at 32% 28%, #7189b8 0%, #3a4c72 48%, #131a2c 100%);
+  box-shadow: inset -4px -3px 8px rgba(0, 0, 0, .55), 0 0 12px rgba(143, 193, 181, .2);
 }
-.o-rocket { position: absolute; left: 50%; top: 50%; width: 0; height: 0; z-index: 3; animation: o-x 1.7s ease-in-out infinite alternate, o-layer 3.4s step-end infinite; }
-.o-y { position: absolute; left: 0; top: 0; width: 0; height: 0; animation: o-y 3.4s ease-in-out infinite; }
-.o-s { position: absolute; left: -17px; top: -8.5px; width: 34px; height: 17px; animation: o-s 3.4s ease-in-out infinite; }
-.o-s svg { display: block; overflow: visible; }
-.o-flame { transform-box: fill-box; transform-origin: right center; animation: o-flame .18s ease-in-out infinite alternate; }
-@keyframes o-x { from { transform: translateX(-78px); } to { transform: translateX(78px); } }
-@keyframes o-y { 0%, 50%, 100% { transform: translateY(0); } 25% { transform: translateY(13px); } 75% { transform: translateY(-13px); } }
-@keyframes o-layer { 0% { z-index: 3; } 50% { z-index: 1; } }
-@keyframes o-s {
-  0% { transform: scale(.9) scaleX(1); opacity: 1; }
-  25% { transform: scale(1.18) scaleX(1); opacity: 1; }
-  47% { transform: scale(.9) scaleX(1); opacity: .9; }
-  53% { transform: scale(.9) scaleX(-1); opacity: .75; }
-  75% { transform: scale(.62) scaleX(-1); opacity: .55; }
-  97% { transform: scale(.9) scaleX(-1); opacity: .8; }
-  100% { transform: scale(.9) scaleX(1); opacity: 1; }
+.o-rocket {
+  position: absolute; left: 0; top: 0; width: 18px; height: 6px; z-index: 3;
+  offset-path: path("M 13 22 A 62 11 0 1 0 137 22 A 62 11 0 1 0 13 22"); offset-rotate: auto; offset-anchor: 50% 50%;
+  animation: o-lap 1.5s linear infinite, o-depth 1.5s step-end infinite, o-size 1.5s ease-in-out infinite;
 }
-@keyframes o-flame { from { transform: scaleX(.55); } to { transform: scaleX(1.15); } }
-/* with reduced motion the rocket rests beside the planet and the words carry the message */
+.o-rocket svg { position: absolute; inset: 0; width: 18px; height: 6px; overflow: visible; display: block; }
+.o-rocket::before { content: ""; position: absolute; right: 16px; top: 2px; width: 22px; height: 2px; border-radius: 2px; background: linear-gradient(to left, rgba(255, 138, 0, .6), rgba(255, 138, 0, 0)); }
+@keyframes o-lap { from { offset-distance: 0%; } to { offset-distance: 100%; } }
+@keyframes o-depth { 0% { z-index: 3; } 50% { z-index: 1; } }
+@keyframes o-size {
+  0%, 50%, 100% { scale: .9; opacity: .85; }
+  25% { scale: 1.12; opacity: 1; }
+  75% { scale: .68; opacity: .5; }
+}
+/* with reduced motion the rocket rests on the orbit and the words carry the message */
 @media (prefers-reduced-motion: reduce) {
-  .o-rocket, .o-y, .o-s, .o-flame { animation: none; }
-  .o-rocket { transform: translateX(46px); }
+  .o-rocket { animation: none; offset-distance: 14%; }
 }
 .chat.restored { animation: none; }
 .chat-empty { font-size: 13.5px; margin: 4px 2px 8px; }
