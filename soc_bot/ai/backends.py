@@ -156,6 +156,11 @@ _FOLLOW_UP = re.compile(
 )
 _NEW_SUBJECT = ("audit", "who asked", "isolat", "incident", "how many", "count", "list", "recent", "latest", "show",
                 "command")
+_THIS_PAGE = re.compile(
+    r"\b(this page|this incident|this alert|this list|this result|this hunt|this dashboard|on (?:my )?screen"
+    r"|what am i (?:looking at|seeing)|what(?:'s| is) (?:this|here)|explain this|is this bad)\b"
+)
+_PAGE_TAG = "(scripted mock reading of the page, not a language model) "
 _EXPLAIN_TAG = "(scripted mock explanation, not a language model) "
 _ACTION_WORDS = {
     "auth.login": "signed in", "auth.logout": "signed out", "incident.list": "looked at the incident list",
@@ -226,6 +231,16 @@ class MockBackend:
                 f"\n\n{PLAIN_MARKER} {_plain_words(tool, data)}"
             )
 
+        page = re.search(r"<page_context page='([^']*)'>\n(.*?)\n</page_context>", prompt, re.DOTALL)
+        if page and _THIS_PAGE.search(question):
+            label, body = page.group(1), page.group(2)
+            shown = "; ".join(line for line in body.splitlines()[:4] if line) or "only the name of the page"
+            return _reply(
+                f"{_PAGE_TAG}You are on: {label}. What the page shows: {shown}.\n"
+                "Confidence: low (mock assistant, no real model).\nNot checked: anything not on the page.\n\n"
+                f"{PLAIN_MARKER} This is a summary of the screen you are on, taken from the page data. "
+                "A real model would explain what it means."
+            )
         if _FOLLOW_UP.search(question) and not any(w in question for w in _NEW_SUBJECT) and not re.search(r"\d", question):
             earlier = re.findall(r'<exchange tools="([\w,]*)"><q>(.*?)</q><a>(.*?)</a></exchange>', prompt, re.DOTALL)
             if earlier:

@@ -44,6 +44,10 @@ class Exchange:
 
 MAX_HISTORY_QUESTION = 300
 MAX_HISTORY_ANSWER = 1200
+MAX_PAGE_CHARS = 3000
+
+# What the web console's chat widget says the user is looking at: (label, text), built by the server, never by the browser.
+PageContext = tuple[str, str]
 
 
 class _Window:
@@ -87,6 +91,7 @@ def build_prompt(
     *,
     final: bool = False,
     history: Sequence[Exchange] = (),
+    page: PageContext | None = None,
 ) -> str:
     parts = [f"<user_level>{LEVEL_LABELS[level]}</user_level>", "<tools>"]
     parts += [f"- {tool.description}" for tool in tools_for(level)]
@@ -100,6 +105,8 @@ def build_prompt(
                 f"<a>{_safe(e.answer[:MAX_HISTORY_ANSWER])}</a></exchange>"
             )
         parts.append("</earlier_exchanges>")
+    if page and (page[0] or page[1]):
+        parts.append(f"<page_context page={_safe(page[0][:80])!r}>\n{_safe(page[1][:MAX_PAGE_CHARS])}\n</page_context>")
     parts.append(f"<question>{_safe(question)}</question>")
     if lookups:
         parts.append("<lookups>")
@@ -172,6 +179,7 @@ class Assistant:
         *,
         automatic: bool = False,
         history: Sequence[Exchange] = (),
+        page: PageContext | None = None,
     ) -> AiAnswer:
         question = " ".join(question.split())
         if not question:
@@ -192,7 +200,7 @@ class Assistant:
                 return answer
             answer.calls += 1
             try:
-                raw = await self._backend.complete(SYSTEM_PROMPT, build_prompt(level, question, lookups, final=final, history=history))
+                raw = await self._backend.complete(SYSTEM_PROMPT, build_prompt(level, question, lookups, final=final, history=history, page=page))
             except BackendError as exc:
                 log.warning("AI backend failed: %s", exc)
                 answer.text = "The assistant is unavailable right now."
