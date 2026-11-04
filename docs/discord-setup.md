@@ -51,13 +51,26 @@ ALLOWED_CHANNEL_IDS=<soc-commands id>,<soc-alerts id>,<soc-audit id>
 ALERT_CHANNEL_ID=<soc-alerts id>
 AUDIT_CHANNEL_ID=<soc-audit id>
 RBAC_VIEWER_ROLE_IDS=<soc-viewer id>
-RBAC_ANALYST_ROLE_IDS=<soc-analyst id>
-RBAC_RESPONDER_ROLE_IDS=<soc-responder id>
+RBAC_READ_ROLE_IDS=
+RBAC_TRIAGE_ROLE_IDS=<soc-analyst id>
+RBAC_RESPONSE_ROLE_IDS=<soc-responder id>
 RBAC_ADMIN_ROLE_IDS=<soc-admin id>
 WEBHOOK_SECRET=<long random string>
 WEBHOOK_HOST=172.18.0.1
 WEBHOOK_PORT=8765
 ```
+
+The bot reads five role variables, one per tier, and higher tiers include the lower ones. Discord role names are free, so map them like this (the names on the left are the ones used in this lab):
+
+| Discord role | Variable | What the tier can do |
+| --- | --- | --- |
+| `soc-viewer` | `RBAC_VIEWER_ROLE_IDS` | Only the summary-level answers of `/ask` |
+| (not used here) | `RBAC_READ_ROLE_IDS` | List and show incidents, `/enrich`, `/hunt` |
+| `soc-analyst` | `RBAC_TRIAGE_ROLE_IDS` | READ, plus comment on, acknowledge and close incidents |
+| `soc-responder` | `RBAC_RESPONSE_ROLE_IDS` | TRIAGE, plus `/isolate` and `/unisolate` |
+| `soc-admin` | `RBAC_ADMIN_ROLE_IDS` | Everything |
+
+The bot refuses to start if none of these is set. Variables you do not use can stay empty.
 
 Two details that cost time: `ALLOWED_CHANNEL_IDS` must include the alert channel or the card's buttons fail with "didn't respond in time", and `WEBHOOK_HOST` is the Docker gateway of the `siem_default` network so that Splunk (in a container) can reach the bot but the lab network cannot.
 
