@@ -37,11 +37,12 @@ index=linux sourcetype=linux:audit type=EXECVE
 | stats dc(technique) AS techniques values(technique) AS what values(cmd) AS commands BY host _time
 | where techniques>=3
 | eval severity="Medium"
+| eval description="Reconnaissance burst: ".techniques." different techniques in ten minutes (".mvjoin(what,", ")."). Commands: ".mvjoin(commands,"; ")
 ```
 
 - **What it does:** each command is sorted into a kind of activity (who am I, account list, process list, system info, network config). It fires when one host shows **three or more different kinds** inside ten minutes. It counts kinds, not commands, so two `ps` commands count once.
 - **Result on the test run:** one row, `soc-victim`, window 14:20 UTC, four kinds (T1033, T1057, T1082, T1087.001). The commands included `whoami`, `id`, `uname`, `ps aux | grep sshd` and `cut -d: -f1 /etc/passwd | grep -v '_'`.
-- **Severity:** Medium, set in the last line (the bot reads the `severity` column).
+- **Severity and description:** Medium, set in the `severity` column. The `description` column lists the techniques and the exact commands, and the Discord card shows it (see below).
 - **Known limits:** the ten-minute windows are fixed, so a burst that straddles a boundary can be split in two; only commands started from a login session are recorded (see the auditd rule in [`infra/auditd/soc.rules`](../infra/auditd/soc.rules)); these are ordinary admin tools, so on a busy machine the threshold would need tuning. There is no `src_ip` column because local commands have no source address; the bot treats it as optional.
 
 ## 2. `./splunkd` started from a home directory
@@ -50,12 +51,18 @@ index=linux sourcetype=linux:audit type=EXECVE
 index=linux sourcetype=linux:audit type=EXECVE a0="./splunkd"
 | rex field=a2 "https?://(?<src_ip>\d+\.\d+\.\d+\.\d+)"
 | eval severity="High"
-| table _time host src_ip severity a0 a1 a2
+| eval cmd=trim(a0." ".coalesce(a1,"")." ".coalesce(a2,"")." ".coalesce(a3,"")." ".coalesce(a4,"")." ".coalesce(a5,""))
+| eval description="T1036 Masquerading: a process named splunkd was started from the current directory. Command: ".cmd
+| table _time host src_ip severity description a0 a1 a2
 ```
 
 - **Fires when** any process named `./splunkd` is started. The real Splunk is never started like this.
-- **Result:** one row, `soc-victim`, `192.168.56.30` (the attacker), `High`. The columns `host`, `src_ip` and `severity` are what the bot's webhook reads, together with the alert's name.
+- **Result:** one row, `soc-victim`, `192.168.56.30` (the attacker), `High`. The columns `host`, `src_ip`, `severity` and `description` are what the bot's webhook reads, together with the alert's name. The `description` holds the full command line.
 - **Fired for real:** on 2 November the alert triggered at 14:05 UTC after a new agent was started. The next run found the same event and was held back by the throttle, as intended.
+
+## What the Discord card shows
+
+The `description` column becomes the text of the card, so an analyst sees what happened without opening Splunk. Example from a live run (card #10): *Reconnaissance burst: 3 different techniques in ten minutes (T1016 network config, T1033 who am I, T1082 system info). Commands: hostname; ip; uname; whoami.* The masquerading card shows the full `./splunkd ...` command line and the attacker address from `src_ip`. Keep the description to a few hundred characters: the card shows the first 1000.
 
 ## Alert settings (saved in Splunk)
 
@@ -64,7 +71,7 @@ index=linux sourcetype=linux:audit type=EXECVE a0="./splunkd"
 | Title | `Discovery burst: several reconnaissance commands in ten minutes` | `Masquerading process: ./splunkd from home directory` |
 | Schedule | Cron `*/5 * * * *`, last 15 minutes | Cron `*/5 * * * *`, last 15 minutes |
 | Trigger | Results greater than 0, *For each result* | Results greater than 0, *For each result* |
-| Throttle | Field `host`, 30 minutes | Field `host`, 30 minutes |
+| Throttle | Field `host`, 30 minutes (the repo default; `infra/siem/splunk/install_alerts.sh 5m` installs a shorter one for demos) | Field `host`, 30 minutes (same) |
 | Severity | Medium (in the search) | High (in the search and Splunk level 4) |
 | Action | *Add to Triggered Alerts*, plus the custom action `soc_bot_webhook` that posts to the bot's webhook with the `X-Webhook-Secret` header (see [`soc_bot_alert`](../infra/siem/splunk/soc_bot_alert/README.md); enabled by `action.soc_bot_webhook = 1` in `savedsearches.conf`) | The same |
 | Sharing | App (admin read and write, everyone read) | App |
