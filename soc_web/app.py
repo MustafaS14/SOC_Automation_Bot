@@ -31,6 +31,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from soc_bot import hunts
 from soc_bot.ai import split_plain_words
+from soc_bot.ai.assistant import MAX_QUESTION_CHARS
 from soc_bot.ai.prompt import DENIED_REPLY, OFF_TOPIC_REPLY
 from soc_bot.ai.tools import LEVEL_LABELS
 from soc_bot.audit import entry_channel, entry_denied, search
@@ -539,13 +540,27 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
             raise ChatError("This conversation is full. Start a new one.")
         if history is None:
             history = chats.history(uid, tier, chat.id) if chat else memory.history(uid, tier)
-        answer = call(
-            backends.assistant.ask(question, tier, uid, history=history, page=(page.label, page.text) if page else None),
-            timeout=backends.settings.ai_timeout + 30,
-        )
+        # The same checks the assistant makes, done first, so a question it would refuse is never stored.
+        plain = " ".join(question.split())
+        if not plain:
+            raise ValidationError("Ask a question first.")
+        if len(plain) > MAX_QUESTION_CHARS:
+            raise ValidationError(f"Keep the question under {MAX_QUESTION_CHARS} characters.")
+        # The question is saved before the (possibly slow) answer is fetched. If the user opens another page while
+        # it runs, the answer still lands in the conversation and the chat can pick it up again.
         if chat is None:
             chat = chats.create(uid, tier, question)
             audit("chat.new", f"#{chat.id}", via=via)
+        chats.add(uid, tier, chat.id, "user", question, page=page.label if page else None)
+        try:
+            answer = call(
+                backends.assistant.ask(question, tier, uid, history=history,
+                                       page=(page.label, page.text) if page else None),
+                timeout=backends.settings.ai_timeout + 30,
+            )
+        except Exception:
+            chats.add(uid, tier, chat.id, "assistant", "The assistant did not answer. Try again.")
+            raise
         audit("ai.ask", LEVEL_LABELS[tier], answer.outcome, tools=",".join(answer.tools_used) or None,
               denied=True if answer.denied else None, calls=answer.calls, followup=len(history) or None,
               question=question[:200], page=page.label if page else None, conversation=chat.id, via=via)
@@ -553,7 +568,6 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         # "ask something first" reply) is not data to explain again.
         lookup_backed = (answer.outcome == "answered" and answer.tools_used and not answer.denied
                          and not refusal_kind(answer.text, False))
-        chats.add(uid, tier, chat.id, "user", question, page=page.label if page else None)
         chats.add(uid, tier, chat.id, "assistant", answer.text, tools=",".join(answer.tools_used) if lookup_backed else "")
         if lookup_backed:
             memory.add(uid, tier, question, split_plain_words(answer.text)[0], ",".join(answer.tools_used))
@@ -676,7 +690,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         if chat is None:
             return json_error("That conversation does not exist.", 404)
         messages = []
-        for m in chats.messages(g.user.id, g.user.tier, chat_id):
+        stored = chats.messages(g.user.id, g.user.tier, chat_id)
+        for m in stored:
             item: dict[str, Any] = {"role": m.role, "page": m.page}
             if m.role == "assistant":
                 item["text"], item["plain"] = split_plain_words(m.text)
@@ -684,7 +699,12 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
             else:
                 item["text"] = m.text
             messages.append(item)
-        return jsonify(conversation=chat_dict(chat), messages=messages)
+        # An answer is "pending" while the last thing said is the user's own question and it is recent enough that the
+        # assistant may still be working on it (a reply is also stored when the assistant fails, so this ends).
+        pending = bool(stored) and stored[-1].role == "user" and (
+            datetime.now(timezone.utc) - datetime.fromisoformat(stored[-1].created)
+        ).total_seconds() < backends.settings.ai_timeout + 60
+        return jsonify(conversation=chat_dict(chat), messages=messages, pending=pending)
 
     @app.get("/chat/context")
     @needs(Permission.VIEWER)

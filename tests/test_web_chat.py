@@ -350,9 +350,13 @@ def test_script_policy_allows_only_this_sites_script_and_only_when_signed_in(sta
 
 def test_the_widget_script_keeps_nothing_in_the_browser_and_never_writes_html():
     js = Path(__file__).parent.parent.joinpath("soc_web", "static", "chat.js").read_text(encoding="utf-8")
-    for forbidden in ("localStorage", "sessionStorage", "indexedDB", "document.cookie", "innerHTML", "outerHTML",
+    for forbidden in ("localStorage", "indexedDB", "document.cookie", "innerHTML", "outerHTML",
                       "insertAdjacentHTML", "eval(", "document.write"):
         assert forbidden not in js, forbidden
+    # The one thing remembered in the tab is whether the panel is open and which conversation (a number) it shows,
+    # so changing page does not close it. No question or answer text is ever stored there.
+    assert js.count("sessionStorage.setItem") == 1 and js.count("sessionStorage.getItem") == 1
+    assert 'JSON.stringify({ open: !panel.hidden, conversation: state.conversation })' in js
     assert '"Escape"' in js and "aria-expanded" in js and "textContent" in js
 
 
@@ -372,3 +376,77 @@ def test_the_button_shows_the_bots_logo_and_the_file_is_served(stack):  # noqa: 
     assert 'src="/static/bot-avatar.png"' in html and '<span aria-hidden="true">AI</span>' not in html
     logo = client.get("/static/bot-avatar.png")
     assert logo.status_code == 200 and logo.data[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+# ---- changing page while a question is being answered -------------------------------------------------------------
+
+def _uid(users, name):
+    return users.db.execute("SELECT id FROM users WHERE username = ?", (name,)).fetchone()[0]
+
+
+def test_a_question_without_an_answer_yet_is_reported_as_pending_until_it_arrives_or_goes_stale(stack):  # noqa: F811
+    app, _, users = stack
+    client, _ = login(app, "read")
+    store = ConversationStore(users)
+    uid = _uid(users, "read")
+    made = store.create(uid, Permission.READ, "slow question").id
+    store.add(uid, Permission.READ, made, "user", "slow question")
+    assert client.get(f"/chat/conversations/{made}").get_json()["pending"] is True
+    store.add(uid, Permission.READ, made, "assistant", "here you go")
+    assert client.get(f"/chat/conversations/{made}").get_json()["pending"] is False
+    stale = store.create(uid, Permission.READ, "old").id
+    store.add(uid, Permission.READ, stale, "user", "old")
+    with users.lock, users.db:
+        users.db.execute("UPDATE chat_messages SET created = '2020-01-01T00:00:00+00:00' WHERE chat_id = ?", (stale,))
+    assert client.get(f"/chat/conversations/{stale}").get_json()["pending"] is False  # it will never be answered
+
+
+def test_the_question_is_saved_before_the_answer_so_another_page_can_pick_it_up(stack):  # noqa: F811
+    app, backends, users = stack
+    client, _ = login(app, "read")
+    seen = {}
+    real = backends.assistant.ask
+
+    async def slow(question, level, user_id, **kw):
+        row = users.db.execute("SELECT c.id, m.role, m.text FROM chat_messages m JOIN chats c ON c.id = m.chat_id").fetchall()
+        seen["while_asking"] = [tuple(r) for r in row]
+        return await real(question, level, user_id, **kw)
+
+    backends.assistant.ask = slow
+    chat(client, "Summarise incident 1")
+    assert [r[1] for r in seen["while_asking"]] == ["user"] and seen["while_asking"][0][2] == "Summarise incident 1"
+    made = listed(client)[0]["id"]
+    assert [m["role"] for m in client.get(f"/chat/conversations/{made}").get_json()["messages"]] == ["user", "assistant"]
+
+
+def test_a_failed_answer_ends_the_pending_state_with_a_message(stack):  # noqa: F811
+    app, backends, _ = stack
+    client, _ = login(app, "read")
+
+    async def broken(*args, **kwargs):
+        raise TimeoutError("relay too slow")
+
+    backends.assistant.ask = broken
+    assert chat(client, "Summarise incident 1").status_code == 400
+    made = listed(client)[0]["id"]
+    data = client.get(f"/chat/conversations/{made}").get_json()
+    assert data["pending"] is False and data["messages"][-1]["text"] == "The assistant did not answer. Try again."
+
+
+def test_a_question_the_assistant_would_refuse_outright_is_never_stored(stack):  # noqa: F811
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    assert chat(client, "   ").status_code == 400
+    assert chat(client, "x" * 600).status_code == 400
+    assert listed(client) == []
+
+
+def test_the_loading_animation_is_in_the_page_and_respects_reduced_motion(stack):  # noqa: F811
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    html = client.get("/").get_data(as_text=True)
+    assert '<template id="chat-pending-tpl">' in html and "The assistant is thinking" in html
+    assert 'role="status"' in html and 'aria-hidden="true"' in html and " style=" not in html
+    css = Path(__file__).parent.parent.joinpath("soc_web", "static", "style.css").read_text(encoding="utf-8")
+    assert "@keyframes o-x" in css and "prefers-reduced-motion: reduce" in css
+    assert re.search(r"prefers-reduced-motion: reduce\) \{[^}]*\.o-rocket[^}]*animation: none", css)

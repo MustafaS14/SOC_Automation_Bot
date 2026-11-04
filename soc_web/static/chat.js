@@ -1,6 +1,8 @@
-/* Chat widget. Talks only to this site's /chat/* routes. All text goes in with textContent, never as HTML, and nothing
-   about a conversation is kept in the browser: it lives on the server. The page itself is never read; the server is
-   told only the address of the page (path and query) and builds the page context itself. */
+/* Chat widget. Talks only to this site's /chat/* routes. All text goes in with textContent, never as HTML, and no
+   conversation text is kept in the browser: it lives on the server. The only thing remembered here, for this tab,
+   is whether the panel is open and which conversation it shows (a number), so changing page does not close it.
+   The page itself is never read; the server is told only the address of the page (path and query) and builds the
+   page context itself. */
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
@@ -13,7 +15,39 @@
     use: $("chat-use-page"), chip: $("chat-chip"), form: $("chat-form"), input: $("chat-input"), send: $("chat-send"),
     archivedToggle: $("chat-archived-toggle")
   };
-  var state = { conversation: null, archived: false, busy: false };
+  var state = { conversation: null, archived: false, busy: false, poll: null };
+  var UI_KEY = "soc-chat-ui";
+
+  function saveUi() {
+    try {
+      sessionStorage.setItem(UI_KEY, JSON.stringify({ open: !panel.hidden, conversation: state.conversation }));
+    } catch (e) { /* storage may be blocked; the panel then simply starts closed on each page */ }
+  }
+
+  function loadUi() {
+    try {
+      var saved = JSON.parse(sessionStorage.getItem(UI_KEY) || "null");
+      var id = saved && typeof saved.conversation === "number" ? saved.conversation : null;
+      return { open: !!(saved && saved.open === true), conversation: id };
+    } catch (e) { return { open: false, conversation: null }; }
+  }
+
+  function pendingBubble() {
+    var tpl = $("chat-pending-tpl");
+    var node = tpl.content.firstElementChild.cloneNode(true);
+    els.log.appendChild(node);
+    els.log.scrollTop = els.log.scrollHeight;
+    return node;
+  }
+
+  // A preview of the loading animation, for looking at it without a slow assistant: open any page at #chat-loading-demo.
+  function showDemo() {
+    if (location.hash === "#chat-loading-demo" && !els.log.querySelector(".msg.pending")) { pendingBubble(); }
+  }
+
+  function stopPolling() {
+    if (state.poll) { clearInterval(state.poll); state.poll = null; }
+  }
 
   function api(method, url, body) {
     var opts = { method: method, headers: { "Accept": "application/json" }, credentials: "same-origin" };
@@ -123,8 +157,9 @@
     }).catch(function (e) { show(e.message); });
   }
 
-  function openConversation(id) {
+  function openConversation(id, quiet) {
     show("");
+    stopPolling();
     return api("GET", "/chat/conversations/" + id).then(function (data) {
       state.conversation = id;
       els.title.textContent = data.conversation.title;
@@ -132,30 +167,57 @@
       data.messages.forEach(function (m) {
         bubble(m.role, m.text, { plain: m.plain, page: m.page, refusal: m.refusal });
       });
+      // A question that was still being answered when the page changed: wait for its answer to arrive.
+      if (data.pending) { waitForAnswer(id); }
+      showDemo();
+      saveUi();
       loadList();
-    }).catch(function (e) { show(e.message); });
+    }).catch(function (e) {
+      if (quiet) { state.conversation = null; saveUi(); } else { show(e.message); }
+    });
+  }
+
+  function waitForAnswer(id) {
+    var node = pendingBubble();
+    var tries = 0;
+    stopPolling();
+    state.poll = setInterval(function () {
+      tries += 1;
+      api("GET", "/chat/conversations/" + id).then(function (data) {
+        if (!data.pending || tries > 90 || state.conversation !== id) {
+          stopPolling();
+          if (state.conversation === id) { openConversation(id); }
+          else if (node.parentNode) { node.parentNode.removeChild(node); }
+        }
+      }).catch(function () { stopPolling(); });
+    }, 2000);
   }
 
   function newChat() {
+    stopPolling();
     state.conversation = null;
     els.title.textContent = "New conversation";
     els.log.textContent = "";
     show("");
+    saveUi();
     loadList();
     els.input.focus();
   }
 
-  function openPanel() {
+  function openPanel(restoring) {
     panel.hidden = false;
     fab.setAttribute("aria-expanded", "true");
     refreshChip();
     loadList();
-    els.input.focus();
+    saveUi();
+    showDemo();
+    if (!restoring) { els.input.focus(); }
   }
 
   function closePanel() {
     panel.hidden = true;
     fab.setAttribute("aria-expanded", "false");
+    saveUi();
     fab.focus();
   }
 
@@ -185,17 +247,29 @@
     var attach = els.use.checked && !els.use.disabled;
     bubble("user", question, { page: attach ? els.chip.textContent.replace(/^using: /, "") : null });
     els.input.value = "";
+    var waiting = pendingBubble();
     api("POST", "/chat/ask", {
       question: question, conversation: state.conversation, path: currentPath(), use_page: attach
     }).then(function (data) {
       state.conversation = data.conversation.id;
       els.title.textContent = data.conversation.title;
+      if (waiting.parentNode) { waiting.parentNode.removeChild(waiting); }
       bubble("assistant", data.answer.text, { plain: data.answer.plain, refusal: data.answer.refusal });
+      saveUi();
       loadList();
     }).catch(function (e) {
+      if (waiting.parentNode) { waiting.parentNode.removeChild(waiting); }
       show(e.message);
     }).then(function () {
       state.busy = false; els.send.disabled = false; els.input.focus();
     });
   });
+
+  // Changing page reloads everything, so put the panel back as it was: open, on the same conversation.
+  var ui = loadUi();
+  if (ui.open) {
+    panel.classList.add("restored");
+    openPanel(true);
+    if (ui.conversation) { openConversation(ui.conversation, true); }
+  }
 }());
