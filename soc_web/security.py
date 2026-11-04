@@ -8,7 +8,7 @@ import threading
 import time
 from collections import deque
 
-from flask import Flask, Response, abort, request, session
+from flask import Flask, Response, abort, g, request, session
 
 CSRF_KEY = "csrf"
 
@@ -16,6 +16,9 @@ CSP = (
     "default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' data:; form-action 'self'; "
     "base-uri 'none'; frame-ancestors 'none'"
 )
+# Signed-in pages carry the chat widget: one script file from this site, talking only to this site. No inline script,
+# no eval, nothing from elsewhere. The login page keeps the stricter policy above.
+CSP_SIGNED_IN = CSP.replace("default-src 'none';", "default-src 'none'; script-src 'self'; connect-src 'self';")
 
 
 def csrf_token() -> str:
@@ -58,7 +61,7 @@ class Throttle:
 def add_headers(app: Flask) -> None:
     @app.after_request
     def headers(resp: Response) -> Response:
-        resp.headers["Content-Security-Policy"] = CSP
+        resp.headers["Content-Security-Policy"] = CSP_SIGNED_IN if g.get("user") else CSP
         resp.headers["X-Content-Type-Options"] = "nosniff"
         resp.headers["X-Frame-Options"] = "DENY"
         resp.headers["Referrer-Policy"] = "no-referrer"

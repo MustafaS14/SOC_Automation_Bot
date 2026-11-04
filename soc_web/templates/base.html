@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}SOC Console{% endblock %}</title>
   <link rel="icon" href="data:,">
+  {% if user %}<meta name="csrf-token" content="{{ csrf_token() }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
@@ -47,5 +48,6 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+{% include '_chat.html' %}
 </body>
 </html>

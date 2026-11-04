@@ -5,7 +5,14 @@
 <h1>Ask the SOC assistant</h1>
 <div class="panel">
   {% if enabled %}
+  {% if current %}<h2>{{ current.title }}</h2>{% endif %}
+  {% if transcript %}
+  <div class="transcript">
+    {% for m in transcript %}<div class="msg {{ m.role }}"><div class="who">{{ 'You' if m.role == 'user' else 'Assistant' }}</div>{% if m.page %}<div class="attached">page: {{ m.page }}</div>{% endif %}<div class="text">{{ m.text }}</div></div>{% endfor %}
+  </div>
+  {% endif %}
   <form method="post" action="{{ url_for('ask') }}">{{ csrf() }}
+    {% if current %}<input type="hidden" name="c" value="{{ current.id }}">{% endif %}
     <label for="question">Your question</label>
     <textarea id="question" name="question" maxlength="500" required>{{ question }}</textarea>
     <p><button class="primary" type="submit">Ask</button></p>
@@ -16,6 +23,13 @@
   <ul class="examples">
     {% for e in examples %}<li><a href="{{ url_for('ask', q=e) }}">{{ e }}</a></li>{% endfor %}
   </ul>
+  <h2>Conversations</h2>
+  {% if conversations %}
+  <ul class="examples">
+    {% for c in conversations %}<li>{% if current and current.id == c.id %}<strong>{{ c.title }}</strong> <span class="muted">(open)</span>{% else %}<a href="{{ url_for('ask', c=c.id) }}">{{ c.title }}</a>{% endif %}</li>{% endfor %}
+  </ul>
+  {% else %}<p class="muted">No saved conversations yet.</p>{% endif %}
+  <p class="muted">Conversations are kept on the console server and shared with the chat button at the bottom right. <a href="{{ url_for('ask') }}">Start a new one</a>.</p>
   {% else %}
   <p class="muted">The assistant is switched off (AI_BACKEND=off).</p>
   {% endif %}

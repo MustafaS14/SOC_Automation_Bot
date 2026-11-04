@@ -69,6 +69,15 @@ def check_password_strength(password: str) -> None:
 
 
 class UserStore:
+    @property
+    def db(self) -> sqlite3.Connection:
+        """The connection, shared with the conversation store so chats live in the same database file."""
+        return self._db
+
+    @property
+    def lock(self) -> threading.Lock:
+        return self._lock
+
     def __init__(self, path: str, *, max_failed: int = 5, lockout_minutes: int = 15):
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
