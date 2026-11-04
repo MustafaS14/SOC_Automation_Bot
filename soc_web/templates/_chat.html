@@ -5,16 +5,17 @@
 </a>
 <aside id="chat-panel" class="chat" role="dialog" aria-label="Assistant chat" hidden>
   <header class="chat-head">
+    {% if avatar %}<img class="chat-logo" src="{{ url_for('static', filename=avatar) }}" alt="" width="34" height="34">{% endif %}
     <h2 id="chat-title">New conversation</h2>
     <button type="button" id="chat-new" class="chat-btn">New chat</button>
     <button type="button" id="chat-close" class="chat-btn" aria-label="Close the chat">Close</button>
   </header>
   <div class="chat-body">
-    <nav class="chat-side" aria-label="Conversations">
+    <div class="chat-side" role="group" aria-label="Conversations">
       <ul id="chat-list"></ul>
       <p class="muted chat-empty" id="chat-empty" hidden>No conversations yet.</p>
       <button type="button" id="chat-archived-toggle" class="link">Show archived</button>
-    </nav>
+    </div>
     <section class="chat-main">
       <div id="chat-log" class="chat-log" role="log" aria-live="polite"></div>
       <p class="chat-error" id="chat-error" role="alert" hidden></p>

@@ -363,3 +363,12 @@ def test_the_mock_reads_the_attached_page_and_says_it_is_scripted(stack):  # noq
     assert "scripted mock reading of the page" in attached["answer"]["text"] and "incident #1" in attached["answer"]["text"]
     bare = chat(client, "What am I looking at on this page?", use_page=False).get_json()
     assert "scripted mock reading" not in bare["answer"]["text"]  # nothing attached, nothing to read
+
+
+def test_the_button_shows_the_bots_logo_and_the_file_is_served(stack):  # noqa: F811
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    html = client.get("/").get_data(as_text=True)
+    assert 'src="/static/bot-avatar.png"' in html and '<span aria-hidden="true">AI</span>' not in html
+    logo = client.get("/static/bot-avatar.png")
+    assert logo.status_code == 200 and logo.data[:8] == b"\x89PNG\r\n\x1a\n"
