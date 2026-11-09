@@ -592,7 +592,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         audit("ai.ask", LEVEL_LABELS[tier], answer.outcome, tools=",".join(answer.tools_used) or None,
               denied=True if answer.denied else None, calls=answer.calls, followup=len(history) or None,
               question=question[:200], page=page.label if page else None, conversation=chat.id, via=via,
-              model=model or None)
+              model=model or None, reason=answer.reason or None)
         # Only answers backed by a lookup are remembered: a follow-up explains the data, and an explanation (or an
         # "ask something first" reply) is not data to explain again.
         lookup_backed = (answer.outcome == "answered" and answer.tools_used and not answer.denied
