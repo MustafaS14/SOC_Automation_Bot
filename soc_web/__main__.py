@@ -17,7 +17,7 @@ import sys
 from soc_bot.audit import AuditLogger
 from soc_bot.config import ConfigError, Settings
 
-from .config import LOOPBACK_HOSTS, WILDCARD_HOSTS, WebSettings
+from .config import LOOPBACK_HOSTS, WILDCARD_HOSTS, WebSettings, check_relay_host
 from .users import TIERS, UserError, UserStore
 
 
@@ -78,8 +78,9 @@ def _user_command(args: argparse.Namespace) -> int:
 
 def _serve() -> int:
     try:
-        settings = Settings.from_env(require_discord=False)
+        settings = Settings.from_env(require_discord=False, console=True)
         web = WebSettings.from_env(mock_mode=settings.mock_mode)
+        check_relay_host(settings.ai_backend, web.host)
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2

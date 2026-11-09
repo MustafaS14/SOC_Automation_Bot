@@ -138,7 +138,7 @@ class Settings:
     ai_max_rows: int = 20
 
     @classmethod
-    def from_env(cls, *, require_discord: bool = True) -> Settings:
+    def from_env(cls, *, require_discord: bool = True, console: bool = False) -> Settings:
         load_dotenv()
         reject_unresolved_references()
         settings = cls(
@@ -182,7 +182,7 @@ class Settings:
             ai_daily_calls=_int_default("AI_DAILY_CALLS", 150),
             ai_max_rows=_int_default("AI_MAX_ROWS", 20),
         )
-        settings.validate(require_discord=require_discord)
+        settings.validate(require_discord=require_discord, console=console)
         return settings
 
     @property
@@ -193,8 +193,11 @@ class Settings:
             hosts.add(host.lower())
         return frozenset(hosts)
 
-    def validate(self, *, require_discord: bool = True) -> None:
-        """`require_discord=False` is for the web console: its own logins, no Discord connection, no alert webhook."""
+    def validate(self, *, require_discord: bool = True, console: bool = False) -> None:
+        """`require_discord=False` is for the web console: its own logins, no Discord connection, no alert webhook.
+
+        Strict by default: only the web console passes `console=True`, which is the one place AI_BACKEND=claude_code is allowed.
+        """
         missing = []
         if require_discord and not self.discord_token:
             missing.append("DISCORD_TOKEN")
@@ -236,6 +239,11 @@ class Settings:
             )
         if self.ai_backend not in {"off", "mock", "claude_code"}:
             raise ConfigError("AI_BACKEND must be off, mock or claude_code.")
+        if self.ai_backend == "claude_code" and not console:
+            raise ConfigError(
+                "AI_BACKEND=claude_code is not allowed for the Discord bot. The real assistant is only for the owner's "
+                "own PC, through the web console. Set AI_BACKEND=mock (with SOC_BOT_MOCK=true) or AI_BACKEND=off for the bot."
+            )
         if self.ai_backend == "mock" and not self.mock_mode:
             raise ConfigError("AI_BACKEND=mock is only allowed together with SOC_BOT_MOCK=true.")
         if self.ai_timeout < 5:

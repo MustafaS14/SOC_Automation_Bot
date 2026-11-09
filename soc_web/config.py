@@ -28,6 +28,15 @@ def default_hosts(bind_host: str, configured: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys((*LOOPBACK_HOSTS, bind_host.lower())))
 
 
+def check_relay_host(ai_backend: str, host: str) -> None:
+    """The real assistant sends data to Anthropic through the owner's login, so the console may only offer it on loopback."""
+    if ai_backend == "claude_code" and host.strip().lower() not in LOOPBACK_HOSTS:
+        raise ConfigError(
+            "AI_BACKEND=claude_code needs SOC_WEB_HOST to be 127.0.0.1, ::1 or localhost: the real assistant is only "
+            f"for the owner's own PC. SOC_WEB_HOST is {host!r}. Use AI_BACKEND=mock or off, or listen on loopback."
+        )
+
+
 @dataclass(frozen=True)
 class WebSettings:
     secret_key: str = field(repr=False)
