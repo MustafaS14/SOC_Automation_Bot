@@ -31,6 +31,7 @@ class AiAnswer:
     tools_used: list[str] = field(default_factory=list)
     denied: bool = False
     calls: int = 0
+    reason: str = ""  # why the backend failed (exit status, timeout, command not found), for the audit log; never shown to users
 
 
 @dataclass(frozen=True)
@@ -207,6 +208,7 @@ class Assistant:
             except BackendError as exc:
                 log.warning("AI backend failed: %s", exc)
                 answer.text = "The assistant is unavailable right now."
+                answer.reason = str(exc)[:200]
                 return answer
             kind, value = parse_reply(raw)
             if kind == "answer":

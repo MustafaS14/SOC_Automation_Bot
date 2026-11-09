@@ -301,3 +301,8 @@ def test_mock_plain_words_wording(tool, data, must_contain):
 
     text = _plain_words(tool, data)
     assert must_contain in text and "=" not in text and ";" not in text  # no raw field syntax leaks through
+
+
+async def test_backend_failure_reason_is_kept_for_the_audit_log_and_not_in_the_text(store):
+    result = await make(Script(BackendError("exit status 1: not logged in")), store).ask("hi soc", Permission.VIEWER, 1)
+    assert result.reason == "exit status 1: not logged in" and result.reason not in result.text
