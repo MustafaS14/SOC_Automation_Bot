@@ -118,6 +118,7 @@ def create_app(
     max_per_minute: int = 30,
     link_hosts: frozenset[str] = frozenset(),
     clock: Callable[[], float] = time.monotonic,
+    api_secret: str = "",
 ) -> web.Application:
     if not secret.strip():
         # compare_digest(b"", b"") is True, so an empty secret would accept anyone.
@@ -149,4 +150,10 @@ def create_app(
 
     app = web.Application(client_max_size=MAX_BODY_BYTES)
     app.router.add_post("/webhook/splunk", splunk_alert)
+    if api_secret:
+        if hmac.compare_digest(api_secret.encode(), secret.encode()):
+            raise ValueError("API_SECRET must be a different secret from WEBHOOK_SECRET.")
+        from .api import register  # the /api routes exist only when an API secret is set
+
+        register(app, store, api_secret, max_per_minute=max_per_minute, clock=clock)
     return app

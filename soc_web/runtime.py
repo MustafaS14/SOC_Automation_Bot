@@ -18,6 +18,8 @@ from soc_bot.clients import EnrichmentClient, HecClient, SplunkClient
 from soc_bot.config import Settings
 from soc_bot.store import IncidentStore
 
+from .remote import TIMEOUT, RemoteIncidentStore
+
 log = logging.getLogger("soc_web")
 T = TypeVar("T")
 
@@ -58,7 +60,7 @@ class AsyncRunner:
 class Backends:
     settings: Settings
     runner: AsyncRunner
-    store: IncidentStore
+    store: IncidentStore | RemoteIncidentStore
     audit_log: AuditLogger
     splunk: Any = None
     hec: Any = None
@@ -78,12 +80,15 @@ class Backends:
             self.audit_log.close()
 
 
-def build_backends(settings: Settings, runner: AsyncRunner) -> Backends:
-    """The same data sources as the bot, minus SSH: the console cannot isolate a host."""
-    return runner.run(_build(settings, runner))
+def build_backends(settings: Settings, runner: AsyncRunner, remote: tuple[str, str] | None = None) -> Backends:
+    """The same data sources as the bot, minus SSH: the console cannot isolate a host.
+
+    `remote` is (url, secret) of the bot's read-only incident API; incidents are then read from soc-siem, not a local file.
+    """
+    return runner.run(_build(settings, runner, remote))
 
 
-async def _build(settings: Settings, runner: AsyncRunner) -> Backends:
+async def _build(settings: Settings, runner: AsyncRunner, remote: tuple[str, str] | None = None) -> Backends:
     s = settings
     audit_log = AuditLogger(s.audit_log_path)
     if s.mock_mode:
@@ -94,9 +99,14 @@ async def _build(settings: Settings, runner: AsyncRunner) -> Backends:
         backends = Backends(s, runner, store, audit_log, splunk=mock.MockSplunkClient(),
                             enrichment=mock.MockEnrichmentClient())
     else:
-        store = IncidentStore(s.db_path)
         http = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
         clients = [http]
+        if remote:
+            api_http = httpx.AsyncClient(timeout=TIMEOUT)
+            clients.append(api_http)
+            store = RemoteIncidentStore(remote[0], remote[1], http=api_http)
+        else:
+            store = IncidentStore(s.db_path)
         backends = Backends(
             s, runner, store, audit_log,
             enrichment=EnrichmentClient(http=http, abuseipdb_key=s.abuseipdb_api_key, virustotal_key=s.virustotal_api_key),

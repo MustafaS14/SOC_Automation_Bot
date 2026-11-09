@@ -147,11 +147,14 @@ class SocBot(commands.Bot):
             self.post_alert,
             max_per_minute=s.webhook_rate_limit,
             link_hosts=s.alert_link_hosts,
+            api_secret=s.api_secret,
         )
         self._web_runner = web.AppRunner(app)
         await self._web_runner.setup()
         await web.TCPSite(self._web_runner, s.webhook_host, s.webhook_port).start()
         log.info("Alert webhook listening on %s:%d", s.webhook_host, s.webhook_port)
+        if s.api_secret:
+            log.info("Read-only incident API enabled on the same address (/api/incidents)")
 
     async def post_alert(self, incident: Incident) -> None:
         channel_id = self.settings.alert_channel_id

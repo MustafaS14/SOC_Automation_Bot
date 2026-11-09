@@ -88,7 +88,7 @@ python -m soc_web user add alice --tier triage              # asks for the passw
 python -m soc_web                                           # http://127.0.0.1:8080
 ```
 
-The console reads the same `.env` as the bot, but needs no Discord token, role IDs, channel IDs or `WEBHOOK_SECRET`. Point `DB_PATH` at the bot's incident database to see its incidents; alerts arrive through the bot's webhook, not the console.
+The console reads the same `.env` as the bot, but needs no Discord token, role IDs, channel IDs or `WEBHOOK_SECRET`. Point `DB_PATH` at the bot's incident database to see its incidents, or read them over the network from soc-siem (see "Live incidents from soc-siem"); alerts arrive through the bot's webhook, not the console.
 
 Account commands: `user list`, `user passwd <name>`, `user tier <name> <tier>`, `user disable <name>`, `user enable <name>`. There is no sign-up page and no admin page for accounts, on purpose: accounts are made on the machine that runs the console.
 
@@ -105,6 +105,19 @@ Settings (all optional except the secret key; see `.env.example`):
 | `SOC_WEB_USERS_DB` | `web_users.db` | Accounts (git-ignored) |
 
 **Demo:** with `SOC_BOT_MOCK=true` the console uses in-memory fake data and, if there are no accounts, creates `demo` (ADMIN) and prints its random password once.
+
+## Live incidents from soc-siem
+
+By default the console reads the incident database next to it (`DB_PATH`). To show the real incidents held by the bot on soc-siem from the console on your own PC, the bot offers a small **read-only API** and the console has a client for it.
+
+- **On the bot (soc-siem):** set `API_SECRET` (at least 32 characters, different from `WEBHOOK_SECRET`; for example `python -c "import secrets; print(secrets.token_urlsafe(32))"`) and make the webhook listen on the host-only address instead of loopback (`WEBHOOK_HOST=<soc-siem address>`). The routes are `GET /api/incidents` (filters `status`, `severity`, `order`, `limit`, capped at 50), `GET /api/incidents/<id>` (with comments) and `GET /api/counts`. There are no POST, PUT or DELETE routes. With no `API_SECRET` the `/api` routes are not registered at all.
+- **On your PC:** set `SOC_BOT_API_URL=http://<soc-siem address>:8765` and `SOC_BOT_API_SECRET=<the same value>`. Both or neither; the console refuses to start with only one. It cannot be combined with `SOC_BOT_MOCK=true`.
+- **Reaching it:** the PC and soc-siem share the lab's host-only network, so the URL is the VM's host-only address (for example `http://192.168.56.10:8765`). From the PC, `curl.exe -H "X-Api-Secret: $env:SOC_BOT_API_SECRET" http://<soc-siem address>:8765/api/counts` is a quick check.
+- **It is plain HTTP.** The secret and the incident text cross that network unencrypted, which is acceptable only on the isolated host-only network. Do not expose the port beyond it, and do not point the console at it over any other network without a TLS reverse proxy.
+- **Read-only here.** In this mode the console hides Acknowledge, Close and Comment, and their routes refuse (HTTP 405, "read-only", and the refusal is audited). Enriching an incident's IP still works but does not write a comment onto it. Changing incidents stays in the Discord bot. The chat and Ask page read the same live incidents, so the assistant's tools see what the pages show.
+- **Status strip.** An extra "Incidents" entry says "live data from soc-siem (read-only)" or "soc-siem offline". Timeouts are short (3 s to connect, 5 s in all) with one attempt and no retries, so a stopped VM shows a plain "unreachable" page, not a hang.
+- **What the API returns.** Only incident fields and comments, with secret-looking text removed by the same redaction as the audit log (a safety net, not a guarantee). Errors are generic JSON with no stack traces. Requests are limited with the webhook's mechanism, on a separate budget so reading cannot delay alerts, and only authenticated requests count. The secret is compared in constant time, accepted only in the header, and never logged.
+- **Rotation.** If the secret may have leaked, change `API_SECRET` on the bot and `SOC_BOT_API_SECRET` on the PC.
 
 ## Security notes
 
