@@ -8,16 +8,19 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from datetime import datetime, timedelta, timezone
 from functools import wraps
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from flask import (
     Flask,
     abort,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -29,6 +32,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 from soc_bot import hunts
 from soc_bot.ai import split_plain_words
+from soc_bot.ai.assistant import MAX_QUESTION_CHARS
+from soc_bot.ai.backends import CHAT_MODELS
 from soc_bot.ai.prompt import DENIED_REPLY, OFF_TOPIC_REPLY
 from soc_bot.ai.tools import LEVEL_LABELS
 from soc_bot.audit import entry_channel, entry_denied, search
@@ -38,8 +43,10 @@ from soc_bot.store import CLASSIFICATIONS, SEVERITIES
 from soc_bot.store.incidents import ORDERS
 from soc_bot.validators import ValidationError, parse_incident_ref, parse_ip
 
+from . import pagecontext
 from .answers import parse_answer, pretty
 from .config import WebSettings
+from .conversations import MAX_MESSAGES, Chat, ChatBusy, ChatError, ConversationStore
 from .memory import ConversationMemory
 from .runtime import Backends
 from .security import Throttle, add_headers, check_csrf, csrf_token
@@ -159,6 +166,37 @@ def audit_row(e: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def audit_query(args: Any) -> tuple[dict[str, str], bool, int]:
+    """The audit page's filters, the denied-only switch and the page number, from a query string. Anything that is not
+    a known value is ignored, so the same function serves the page and the chat widget's view of it."""
+    filters = {
+        "actor": args.get("actor", "").strip()[:64],
+        "action": args.get("action", "").strip()[:64],
+        "outcome": args.get("outcome", "") if args.get("outcome", "") in AUDIT_OUTCOMES else "",
+        "channel": args.get("channel", "") if args.get("channel", "") in AUDIT_CHANNELS else "",
+        "since": args.get("since", "") if _DATE.match(args.get("since", "")) else "",
+        "until": args.get("until", "") if _DATE.match(args.get("until", "")) else "",
+    }
+    try:
+        page = max(1, min(int(args.get("page", "1")), 10_000))
+    except ValueError:
+        page = 1
+    return filters, args.get("denied") == "1", page
+
+
+# The lowest tier that may open each page the chat widget can read. A user below it gets no page context at all.
+CONTEXT_TIERS = {
+    "dashboard": Permission.VIEWER, "incidents": Permission.READ, "incident": Permission.READ,
+    "hunt": Permission.READ, "enrich_page": Permission.READ, "enrich_ip": Permission.READ,
+    "audit_view": Permission.ADMIN, "ask": Permission.VIEWER,
+}
+PAGE_NAMES = {"ask": "Ask page", "enrich_page": "enrich page", "enrich_ip": "enrich page", "hunt": "hunt page"}
+
+
+def chat_dict(chat: Chat) -> dict[str, Any]:
+    return {"id": chat.id, "title": chat.title, "updated": chat.updated, "archived": chat.archived}
+
+
 def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     app = Flask(__name__)
     app.config.update(
@@ -179,6 +217,18 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     login_throttle = Throttle(limit=20, period=300)
     probe = StatusProbe(backends)
     memory = ConversationMemory()
+    chats = ConversationStore(users)
+    recent_results = pagecontext.RecentResults()
+    asking: set[int] = set()  # users with a question being answered right now: one at a time, whichever tab or page
+    asking_lock = threading.Lock()
+    # The Sonnet/Haiku switch only means something with the real assistant; the mock ignores the choice.
+    models_on = CHAT_MODELS if backends.settings.ai_backend == "claude_code" else None
+
+    def chosen_model(value: Any) -> str:
+        """The model asked for, if it is one of the allowed two and the real assistant is on; otherwise "" (default)."""
+        return value if models_on and isinstance(value, str) and value in CHAT_MODELS else ""
+
+    avatar = "bot-avatar.png" if (Path(app.static_folder or "") / "bot-avatar.png").is_file() else None
 
     # ---- helpers ------------------------------------------------------------------------------------------
 
@@ -255,7 +305,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     def inject() -> dict[str, Any]:
         return {"user": g.get("user"), "P": Permission, "mock": backends.settings.mock_mode,
                 "sysstatus": probe.snapshot() if g.get("user") else None,
-                "level_label": LEVEL_LABELS, "ranks": RANKS}
+                "level_label": LEVEL_LABELS, "ranks": RANKS, "avatar": avatar,
+                "chat_on": backends.assistant is not None, "chat_models": models_on}
 
     @app.template_filter("when")
     def when(dt: Any) -> str:
@@ -311,6 +362,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
             audit("auth.logout", g.user.username)
             users.revoke_sessions(g.user.id)  # a copied cookie dies with the logout, not at its expiry
             memory.clear(g.user.id)
+            recent_results.clear(g.user.id)
         session.clear()
         return redirect(url_for("login"))
 
@@ -429,6 +481,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
                     f"IP enrichment {report.ip}: verdict {report.verdict}, AbuseIPDB {score}/100, VirusTotal {vt} malicious",
                 ))
             audit("enrich.ip", report.ip, verdict=report.verdict, incident=inc.id if inc else None)
+            recent_results.put(g.user.id, g.user.tier, "enrich", pagecontext.enrichment(report))
             return render_template("enrich.html", report=report, incident_id=inc.id if inc else None)
         except HANDLED as exc:
             flash(explain(exc), "error")
@@ -480,34 +533,91 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
                 columns = [c for c in dict.fromkeys(k for row in rows for k in row) if not c.startswith("_") or c in ("_time", "_raw")]
                 columns.sort(key=lambda c: (c != "_time", c == "_raw"))
                 ctx.update(rows=rows[:MAX_HUNT_ROWS], columns=columns, total=len(rows))
+                recent_results.put(g.user.id, g.user.tier, "hunt",
+                                   pagecontext.hunt(form, columns, rows[:MAX_HUNT_ROWS], len(rows)))
             except HANDLED as exc:
                 flash(explain(exc), "error")
         return render_template("hunt.html", **ctx)
 
+    def ask_and_record(question: str, chat_id: int | None, *, page: pagecontext.PageContext | None,
+                       via: str, history: list | None = None, model: str = "") -> tuple[Chat, Any, list]:
+        """One question, asked as the signed-in user and kept in their conversation (a new one when `chat_id` is None).
+        Returns the conversation, the assistant's answer and the history it was given. Raises HANDLED errors."""
+        tier, uid = g.user.tier, g.user.id
+        chat = chats.get(uid, tier, chat_id) if chat_id else None
+        if chat_id and chat is None:
+            raise ChatError("That conversation does not exist.")
+        if chat and len(chats.messages(uid, tier, chat.id)) + 2 > MAX_MESSAGES:
+            raise ChatError("This conversation is full. Start a new one.")
+        if history is None:
+            history = chats.history(uid, tier, chat.id) if chat else memory.history(uid, tier)
+        # The same checks the assistant makes, done first, so a question it would refuse is never stored.
+        plain = " ".join(question.split())
+        if not plain:
+            raise ValidationError("Ask a question first.")
+        if len(plain) > MAX_QUESTION_CHARS:
+            raise ValidationError(f"Keep the question under {MAX_QUESTION_CHARS} characters.")
+        # One question at a time per user, across tabs and pages: a double click or a quick reload cannot start a
+        # second call to the assistant (or the relay) while the first is still running. This check comes before
+        # anything is stored or counted against the hourly limit.
+        with asking_lock:
+            if uid in asking:
+                raise ChatBusy("Your previous question is still being answered. Wait for it to finish.")
+            asking.add(uid)
+        try:
+            # The question is saved before the (possibly slow) answer is fetched. If the user opens another page
+            # while it runs, the answer still lands in the conversation and the chat can pick it up again.
+            if chat is None:
+                chat = chats.create(uid, tier, question)
+                audit("chat.new", f"#{chat.id}", via=via)
+            chats.add(uid, tier, chat.id, "user", question, page=page.label if page else None)
+            try:
+                answer = call(
+                    backends.assistant.ask(question, tier, uid, history=history,
+                                           page=(page.label, page.text) if page else None, model=model),
+                    timeout=backends.settings.ai_timeout + 30,
+                )
+            except Exception:
+                # Stored so the chat stops waiting. Nothing asks again: only a person pressing Send does.
+                chats.add(uid, tier, chat.id, "assistant", "The assistant did not answer. Try again.")
+                raise
+        finally:
+            with asking_lock:
+                asking.discard(uid)
+        audit("ai.ask", LEVEL_LABELS[tier], answer.outcome, tools=",".join(answer.tools_used) or None,
+              denied=True if answer.denied else None, calls=answer.calls, followup=len(history) or None,
+              question=question[:200], page=page.label if page else None, conversation=chat.id, via=via,
+              model=model or None)
+        # Only answers backed by a lookup are remembered: a follow-up explains the data, and an explanation (or an
+        # "ask something first" reply) is not data to explain again.
+        lookup_backed = (answer.outcome == "answered" and answer.tools_used and not answer.denied
+                         and not refusal_kind(answer.text, False))
+        chats.add(uid, tier, chat.id, "assistant", answer.text, tools=",".join(answer.tools_used) if lookup_backed else "")
+        if lookup_backed:
+            memory.add(uid, tier, question, split_plain_words(answer.text)[0], ",".join(answer.tools_used))
+        return chat, answer, history
+
     @app.route("/ask", methods=["GET", "POST"])
     @needs(Permission.VIEWER)
     def ask():
-        question, answer = "", None
+        question, answer, current, transcript = "", None, None, []
+        raw_chat = request.values.get("c", "")
+        chat_id = int(raw_chat) if raw_chat.isdigit() and len(raw_chat) < 10 else None
         if request.method == "GET":
             question = request.args.get("q", "").strip()[:500]  # an example link fills the box; nothing is asked yet
+            if chat_id:
+                current = chats.get(g.user.id, g.user.tier, chat_id)
+                transcript = chats.messages(g.user.id, g.user.tier, chat_id) if current else []
         if request.method == "POST":
             question = request.form.get("question", "").strip()
             if backends.assistant is None:
                 flash("The AI assistant is not enabled (AI_BACKEND).", "error")
             else:
-                history = memory.history(g.user.id, g.user.tier)
                 try:
-                    answer = call(backends.assistant.ask(question, g.user.tier, g.user.id, history=history),
-                                  timeout=backends.settings.ai_timeout + 30)
-                    audit("ai.ask", LEVEL_LABELS[g.user.tier], answer.outcome,
-                          tools=",".join(answer.tools_used) or None, denied=True if answer.denied else None,
-                          calls=answer.calls, followup=len(history) or None, question=question[:200])
-                    # Only answers backed by a lookup are remembered: a follow-up explains the data, and an
-                    # explanation (or a "ask something first" reply) is not data to explain again.
-                    if (answer.outcome == "answered" and answer.tools_used and not answer.denied
-                            and not refusal_kind(answer.text, False)):
-                        memory.add(g.user.id, g.user.tier, question, split_plain_words(answer.text)[0],
-                                   ",".join(answer.tools_used))
+                    current, answer, _ = ask_and_record(question, chat_id, page=None, via="ask",
+                                                        model=chosen_model(request.form.get("model")))
+                except ChatError as exc:
+                    flash(str(exc), "error")
                 except HANDLED as exc:
                     flash(explain(exc), "error")
         technical, plain = split_plain_words(answer.text) if answer else ("", None)
@@ -516,7 +626,9 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         return render_template("ask.html", question=question, answer=answer, blocks=blocks, plain=plain,
                                enabled=backends.assistant is not None, remembered=remembered, memory=memory,
                                examples=EXAMPLES[g.user.tier] + ((FOLLOW_UP_EXAMPLE,) if remembered else ()),
-                               refusal=refusal_kind(answer.text, answer.denied) if answer else None)
+                               refusal=refusal_kind(answer.text, answer.denied) if answer else None,
+                               conversations=chats.list(g.user.id, g.user.tier), current=current,
+                               transcript=transcript, model_choice=chosen_model(request.form.get("model")))
 
     @app.post("/ask/forget")
     @needs(Permission.VIEWER)
@@ -525,25 +637,158 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         flash("The assistant has forgotten your earlier questions.", "ok")
         return redirect(url_for("ask"))
 
+    # ---- chat widget --------------------------------------------------------------------------------------
+
+    def page_context(raw_path: str) -> pagecontext.PageContext | None:
+        """What the user's current page shows, built here from the same data and for the same tier that may open it.
+        The browser names the page (a path and query string); it never supplies any page text."""
+        parts = urlsplit(str(raw_path)[:400])
+        try:
+            endpoint, values = app.url_map.bind("localhost").match(parts.path, method="GET")
+        except HTTPException:
+            return None
+        needed = CONTEXT_TIERS.get(endpoint)
+        if needed is None or g.user.tier < needed:
+            return None
+        query = {k: v[0] for k, v in parse_qs(parts.query[:400]).items() if v}
+        tier = g.user.tier
+        try:
+            if endpoint == "dashboard":
+                counts = call(store.counts())
+                open_total = sum(n for s, n in counts["status"].items() if s != "Closed")
+                recent = call(store.list("open", None, 8)) if tier >= Permission.READ else []
+                return pagecontext.dashboard(counts, open_total, threat_level(counts["open_by_severity"])[0], recent)
+            if endpoint == "incidents":
+                status = query.get("status", "open")
+                status = status if status in STATUSES else "open"
+                severity = query.get("severity") if query.get("severity") in SEVERITIES else None
+                order = query.get("order", "newest")
+                order = order if order in ORDERS else "newest"
+                try:
+                    limit = max(1, min(int(query.get("limit", "25")), 50))
+                except ValueError:
+                    limit = 25
+                return pagecontext.incident_list(call(store.list(status, severity, limit, order)), status, severity, order)
+            if endpoint == "incident":
+                inc = call(store.get(values["incident_id"]))
+                acks, _ = search(backends.settings.audit_log_path, action="incident.ack", target=f"#{inc.id}",
+                                 outcome="success", limit=20)
+                return pagecontext.incident(inc, build_timeline(inc, acks))
+            if endpoint == "hunt":
+                return recent_results.get(g.user.id, tier, "hunt") or pagecontext.only_name(PAGE_NAMES[endpoint])
+            if endpoint in ("enrich_page", "enrich_ip"):
+                return recent_results.get(g.user.id, tier, "enrich") or pagecontext.only_name(PAGE_NAMES[endpoint])
+            if endpoint == "audit_view":
+                filters, denied_only, page = audit_query(query)
+                found, total = search(backends.settings.audit_log_path, denied_only=denied_only,
+                                      offset=(page - 1) * AUDIT_PAGE, limit=AUDIT_PAGE, **filters)
+                shown = {k: v for k, v in {**filters, "denied": "1" if denied_only else ""}.items() if v}
+                return pagecontext.audit_rows([audit_row(e) for e in found], total, shown)
+        except NotFoundError:
+            return None
+        except HANDLED:
+            log.warning("Could not build the chat context for %s", endpoint)
+            return None
+        return pagecontext.only_name(PAGE_NAMES.get(endpoint, endpoint))
+
+    def json_error(message: str, code: int = 400):
+        return jsonify(error=message), code
+
+    def chat_body() -> dict[str, Any]:
+        body = request.get_json(silent=True)
+        return body if isinstance(body, dict) else {}
+
+    def chat_id_from(value: Any) -> int | None:
+        return value if isinstance(value, int) and not isinstance(value, bool) and 0 < value < 10**9 else None
+
+    @app.get("/chat/conversations")
+    @needs(Permission.VIEWER)
+    def chat_list():
+        archived = request.args.get("archived") == "1"
+        waiting = chats.pending_ids(g.user.id, g.user.tier, backends.settings.ai_timeout + 60)
+        return jsonify(enabled=backends.assistant is not None,
+                       conversations=[{**chat_dict(c), "pending": c.id in waiting}
+                                      for c in chats.list(g.user.id, g.user.tier, archived=archived)])
+
+    @app.get("/chat/conversations/<int:chat_id>")
+    @needs(Permission.VIEWER)
+    def chat_messages(chat_id: int):
+        chat = chats.get(g.user.id, g.user.tier, chat_id)
+        if chat is None:
+            return json_error("That conversation does not exist.", 404)
+        messages = []
+        stored = chats.messages(g.user.id, g.user.tier, chat_id)
+        for m in stored:
+            item: dict[str, Any] = {"role": m.role, "page": m.page}
+            if m.role == "assistant":
+                item["text"], item["plain"] = split_plain_words(m.text)
+                item["refusal"] = refusal_kind(m.text, False)
+            else:
+                item["text"] = m.text
+            messages.append(item)
+        # An answer is "pending" while the last thing said is the user's own question and it is recent enough that the
+        # assistant may still be working on it (a reply is also stored when the assistant fails, so this ends).
+        pending = bool(stored) and stored[-1].role == "user" and (
+            datetime.now(timezone.utc) - datetime.fromisoformat(stored[-1].created)
+        ).total_seconds() < backends.settings.ai_timeout + 60
+        return jsonify(conversation=chat_dict(chat), messages=messages, pending=pending)
+
+    @app.get("/chat/context")
+    @needs(Permission.VIEWER)
+    def chat_context():
+        """Only the name of what the widget would attach, for the chip. No model call and no page text is returned."""
+        ctx = page_context(request.args.get("path", ""))
+        return jsonify(label=ctx.label if ctx else None)
+
+    @app.post("/chat/conversations/<int:chat_id>/rename")
+    @needs(Permission.VIEWER)
+    def chat_rename(chat_id: int):
+        try:
+            chats.rename(g.user.id, g.user.tier, chat_id, str(chat_body().get("title", "")))
+        except ChatError as exc:
+            return json_error(str(exc), 404 if "exist" in str(exc) else 400)
+        audit("chat.rename", f"#{chat_id}")
+        return jsonify(conversation=chat_dict(chats.get(g.user.id, g.user.tier, chat_id)))
+
+    @app.post("/chat/conversations/<int:chat_id>/archive")
+    @needs(Permission.VIEWER)
+    def chat_archive(chat_id: int):
+        archived = chat_body().get("archived", True) is not False
+        try:
+            chats.set_archived(g.user.id, g.user.tier, chat_id, archived)
+        except ChatError as exc:
+            return json_error(str(exc), 404)
+        audit("chat.archive" if archived else "chat.unarchive", f"#{chat_id}")
+        return jsonify(conversation=chat_dict(chats.get(g.user.id, g.user.tier, chat_id)))
+
+    @app.post("/chat/ask")
+    @needs(Permission.VIEWER)
+    def chat_ask():
+        if backends.assistant is None:
+            return json_error("The AI assistant is not enabled (AI_BACKEND).", 503)
+        body = chat_body()
+        question = str(body.get("question", "")).strip()
+        page = page_context(str(body.get("path", ""))) if body.get("use_page") is True else None
+        try:
+            chat, answer, _ = ask_and_record(question, chat_id_from(body.get("conversation")), page=page, via="widget",
+                                             model=chosen_model(body.get("model")))
+        except ChatBusy as exc:
+            return json_error(str(exc), 429)
+        except ChatError as exc:
+            return json_error(str(exc), 404 if "exist" in str(exc) else 400)
+        except HANDLED as exc:
+            return json_error(explain(exc), 400)
+        technical, plain = split_plain_words(answer.text)
+        return jsonify(conversation=chat_dict(chat), page=page.label if page else None,
+                       answer={"text": technical, "plain": plain, "outcome": answer.outcome,
+                               "refusal": refusal_kind(answer.text, answer.denied)})
+
     # ---- audit log ----------------------------------------------------------------------------------------
 
     @app.get("/audit")
     @needs(Permission.ADMIN)
     def audit_view():
-        args = request.args
-        filters = {
-            "actor": args.get("actor", "").strip()[:64],
-            "action": args.get("action", "").strip()[:64],
-            "outcome": args.get("outcome", "") if args.get("outcome", "") in AUDIT_OUTCOMES else "",
-            "channel": args.get("channel", "") if args.get("channel", "") in AUDIT_CHANNELS else "",
-            "since": args.get("since", "") if _DATE.match(args.get("since", "")) else "",
-            "until": args.get("until", "") if _DATE.match(args.get("until", "")) else "",
-        }
-        denied_only = args.get("denied") == "1"
-        try:
-            page = max(1, min(int(args.get("page", "1")), 10_000))
-        except ValueError:
-            page = 1
+        filters, denied_only, page = audit_query(request.args)
         found, total = search(backends.settings.audit_log_path, denied_only=denied_only,
                               offset=(page - 1) * AUDIT_PAGE, limit=AUDIT_PAGE, **filters)
         rows = [audit_row(e) for e in found]

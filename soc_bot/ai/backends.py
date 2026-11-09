@@ -23,6 +23,11 @@ class BackendError(RuntimeError):
     """The backend could not produce a reply. The text is for the log only, never for chat."""
 
 
+# The models a user may pick per question (Claude Code's own aliases). Only these two can ever reach the command line:
+# whatever else is asked for is refused, so a request cannot turn into an extra argument.
+CHAT_MODELS = {"sonnet": "Sonnet", "haiku": "Haiku"}
+
+
 class AiBackend(Protocol):
     async def complete(self, system: str, prompt: str) -> str: ...
 
@@ -32,7 +37,12 @@ class AiBackend(Protocol):
 _BUILTIN_TOOLS = (
     "Bash Edit MultiEdit Write Read Glob Grep NotebookEdit WebFetch WebSearch Task TodoWrite BashOutput KillShell"
 )
-_ENV_KEEP = ("PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME")
+# Only what Claude Code needs to start and find its own login; none of it is a secret. The Windows names let a
+# development run on a Windows PC start (the VM runs Linux and ignores them).
+_ENV_KEEP = (
+    "PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TMPDIR", "XDG_CONFIG_HOME", "XDG_DATA_HOME",
+    "SYSTEMROOT", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "HOMEDRIVE", "HOMEPATH", "TEMP", "TMP", "COMSPEC", "PATHEXT",
+)
 _MAX_OUTPUT = 20_000
 
 
@@ -48,7 +58,7 @@ class ClaudeCodeBackend:
         self._model = model
         self._timeout = timeout
 
-    def build_args(self, system: str) -> list[str]:
+    def build_args(self, system: str, model: str = "") -> list[str]:
         args = [
             self._command, "-p",
             "--system-prompt", system,
@@ -60,20 +70,22 @@ class ClaudeCodeBackend:
             "--no-session-persistence",
             "--output-format", "text",
         ]
-        if self._model:
-            args += ["--model", self._model]
+        if model and model not in CHAT_MODELS:
+            raise BackendError("unknown model")
+        if model or self._model:
+            args += ["--model", model or self._model]
         return args
 
     def build_env(self) -> dict[str, str]:
         return {k: os.environ[k] for k in _ENV_KEEP if k in os.environ}
 
-    async def complete(self, system: str, prompt: str) -> str:
+    async def complete(self, system: str, prompt: str, model: str = "") -> str:
         if shutil.which(self._command, path=os.environ.get("PATH")) is None:
             raise BackendError(f"{self._command!r} was not found on PATH")
         workdir = tempfile.mkdtemp(prefix="soc-ai-")
         try:
             proc = await asyncio.create_subprocess_exec(
-                *self.build_args(system),
+                *self.build_args(system, model),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -156,6 +168,11 @@ _FOLLOW_UP = re.compile(
 )
 _NEW_SUBJECT = ("audit", "who asked", "isolat", "incident", "how many", "count", "list", "recent", "latest", "show",
                 "command")
+_THIS_PAGE = re.compile(
+    r"\b(this page|this incident|this alert|this list|this result|this hunt|this dashboard|on (?:my )?screen"
+    r"|what am i (?:looking at|seeing)|what(?:'s| is) (?:this|here)|explain this|is this bad)\b"
+)
+_PAGE_TAG = "(scripted mock reading of the page, not a language model) "
 _EXPLAIN_TAG = "(scripted mock explanation, not a language model) "
 _ACTION_WORDS = {
     "auth.login": "signed in", "auth.logout": "signed out", "incident.list": "looked at the incident list",
@@ -209,7 +226,7 @@ _SECRET_WORDS = ("password", "token", "secret", "credential", "api key", "privat
 class MockBackend:
     """A tiny rule-based stand-in so the whole flow can be tried without a model."""
 
-    async def complete(self, system: str, prompt: str) -> str:
+    async def complete(self, system: str, prompt: str, model: str = "") -> str:
         question = self._between(prompt, "<question>", "</question>").lower()
         tools = set(re.findall(r"^- (\w+)\(", prompt, re.MULTILINE))
         lookups = re.findall(r'<log_data tool="(\w+)"[^>]*>\n(.*?)\n</log_data>', prompt, re.DOTALL)
@@ -226,6 +243,16 @@ class MockBackend:
                 f"\n\n{PLAIN_MARKER} {_plain_words(tool, data)}"
             )
 
+        page = re.search(r"<page_context page='([^']*)'>\n(.*?)\n</page_context>", prompt, re.DOTALL)
+        if page and _THIS_PAGE.search(question):
+            label, body = page.group(1), page.group(2)
+            shown = "; ".join(line for line in body.splitlines()[:4] if line) or "only the name of the page"
+            return _reply(
+                f"{_PAGE_TAG}You are on: {label}. What the page shows: {shown}.\n"
+                "Confidence: low (mock assistant, no real model).\nNot checked: anything not on the page.\n\n"
+                f"{PLAIN_MARKER} This is a summary of the screen you are on, taken from the page data. "
+                "A real model would explain what it means."
+            )
         if _FOLLOW_UP.search(question) and not any(w in question for w in _NEW_SUBJECT) and not re.search(r"\d", question):
             earlier = re.findall(r'<exchange tools="([\w,]*)"><q>(.*?)</q><a>(.*?)</a></exchange>', prompt, re.DOTALL)
             if earlier:

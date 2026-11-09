@@ -349,7 +349,7 @@ def test_fonts_are_self_hosted_and_allowed_by_the_csp(stack):
         assert resp.status_code == 200 and resp.data[:4] == b"\x00\x01\x00\x00"
     csp = client.get("/login").headers["Content-Security-Policy"]
     assert "font-src 'self'" in csp
-    assert "http" not in csp and "script-src" not in csp  # still nothing from outside, still no scripts
+    assert "http" not in csp and "script-src" not in csp  # the login page: nothing from outside, no scripts
 
 
 def test_no_page_uses_inline_styles_or_scripts(stack):
@@ -357,8 +357,11 @@ def test_no_page_uses_inline_styles_or_scripts(stack):
     client, _ = login(app, "admin")
     for path in ("/", "/incidents", "/incidents/2", "/hunt", "/enrich", "/ask", "/audit", "/nope"):
         html = client.get(path).get_data(as_text=True)
-        assert " style=" not in html and "<script" not in html and " onclick=" not in html, path
-    assert " style=" not in app.test_client().get("/login").get_data(as_text=True)
+        # the one script on a signed-in page is the self-hosted chat widget, loaded by address, never inline
+        assert html.count("<script") == 1 and '<script src="/static/chat.js" defer></script>' in html, path
+        assert " style=" not in html and " onclick=" not in html, path
+    login_page = app.test_client().get("/login").get_data(as_text=True)
+    assert " style=" not in login_page and "<script" not in login_page
 
 
 def test_ask_shows_a_plain_words_box_separate_from_the_technical_answer(stack):
