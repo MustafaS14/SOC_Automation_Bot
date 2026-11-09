@@ -18,7 +18,7 @@ Part of a fully local SOC lab (no cloud): Caldera attack, victim logs, Splunk, t
 
 New to security? Read the [plain-language overview](docs/plain-language-overview.md) first.
 
-Documentation: [architecture](docs/architecture.md), [lab build log](docs/lab-build-log.md), [Discord setup](docs/discord-setup.md), [troubleshooting](docs/troubleshooting.md), [security review](docs/security-review.md), [bot refactor plan](docs/bot-refactor-plan.md).
+Documentation: [architecture](docs/architecture.md), [lab build log](docs/lab-build-log.md), [Discord setup](docs/discord-setup.md), [troubleshooting](docs/troubleshooting.md), [security review](docs/security-review.md), [bot refactor plan](docs/bot-refactor-plan.md), [live lab](docs/live-lab.md) (the console on your PC against real incidents).
 
 ## Start here
 
