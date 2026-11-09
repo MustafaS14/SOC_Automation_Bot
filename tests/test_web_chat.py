@@ -667,7 +667,7 @@ def test_the_backend_builds_the_model_argument_only_from_the_allowed_names():
 
 
 def test_a_failed_answer_records_why_in_the_audit_log(relay_stack):
-    """The Ask page and the widget share this path: when the relay fails, the audit entry says why."""
+    """When the relay fails, the audit entry says why."""
     from soc_bot.ai.backends import BackendError
 
     app, backends, *_ = relay_stack
@@ -677,9 +677,9 @@ def test_a_failed_answer_records_why_in_the_audit_log(relay_stack):
 
     backends.assistant._backend.complete = broken
     client, _ = login(app, "read")
-    html = client.get("/ask").get_data(as_text=True)
-    resp = client.post("/ask", data={"csrf_token": token(html), "question": "Summarise incident 1"})
-    assert b"unavailable" in resp.data and b"not logged in" not in resp.data  # users see nothing of the cause
+    resp = chat(client, "Summarise incident 1")
+    text = resp.get_data(as_text=True)
+    assert "unavailable" in text and "not logged in" not in text  # users see nothing of the cause
     lines = [json.loads(x) for x in Path(backends.settings.audit_log_path).read_text().splitlines()]
     entry = [e for e in lines if e["action"] == "ai.ask"][-1]
     assert entry["outcome"] == "error" and entry["reason"] == "exit status 1: not logged in"
