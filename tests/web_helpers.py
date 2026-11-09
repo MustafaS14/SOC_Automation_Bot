@@ -55,3 +55,9 @@ def post(client, path: str, page_path: str, **data):
     """POST with a CSRF token taken from `page_path`, the page whose form would send it."""
     html = client.get(page_path).get_data(as_text=True)
     return client.post(path, data={"csrf_token": token(html), **data})
+
+
+def ask(client, question: str, **extra):
+    """Ask through the chat widget's endpoint, with a CSRF token taken from the dashboard. Returns the response."""
+    csrf = token(client.get("/").get_data(as_text=True))
+    return client.post("/chat/ask", json={"question": question, **extra}, headers={"X-CSRF-Token": csrf})

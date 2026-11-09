@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from .web_helpers import PASSWORD, login, post, stack, token  # noqa: F401
+from .web_helpers import PASSWORD, ask, login, post, stack, token  # noqa: F401
 
 
 def test_login_required_everywhere(stack):
     app, _, _ = stack
     client = app.test_client()
-    for path in ("/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/ask", "/audit"):
+    for path in ("/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/audit"):
         resp = client.get(path)
         assert resp.status_code == 302 and "/login" in resp.headers["Location"], path
 
@@ -81,7 +81,7 @@ def test_tier_change_applies_to_existing_session(stack):
 @pytest.mark.parametrize(
     "tier,path,expected",
     [
-        ("viewer", "/", 200), ("viewer", "/ask", 200), ("viewer", "/incidents", 403),
+        ("viewer", "/", 200), ("viewer", "/incidents", 403),
         ("viewer", "/hunt", 403), ("viewer", "/enrich", 403), ("viewer", "/audit", 403),
         ("read", "/incidents", 200), ("read", "/hunt", 200), ("read", "/enrich", 200), ("read", "/audit", 403),
         ("triage", "/audit", 403), ("admin", "/audit", 200),
@@ -246,14 +246,22 @@ def test_hunt_runs_template_and_validates_target(stack):
 def test_ask_answers_at_the_users_level(stack):
     app, _, _ = stack
     client, _ = login(app, "viewer")
-    resp = post(client, "/ask", "/ask", question="How many incidents are open?")
-    assert resp.status_code == 200 and b"Answer" in resp.data
+    resp = ask(client, "How many incidents are open?")
+    assert resp.status_code == 200 and resp.get_json()["answer"]["outcome"] == "answered"
 
 
 def test_ask_requires_a_question(stack):
     app, _, _ = stack
     client, _ = login(app, "viewer")
-    assert b"Ask a question first" in post(client, "/ask", "/ask", question="   ").data
+    resp = ask(client, "   ")
+    assert resp.status_code == 400 and "Ask a question first" in resp.get_json()["error"]
+
+
+def test_the_ask_page_is_gone(stack):
+    app, _, _ = stack
+    client, _ = login(app, "viewer")
+    assert client.get("/ask").status_code == 404 and client.post("/ask").status_code >= 400
+    assert 'href="/ask"' not in client.get("/").get_data(as_text=True)
 
 
 def test_audit_page_lists_entries_for_admin(stack):
@@ -355,7 +363,7 @@ def test_fonts_are_self_hosted_and_allowed_by_the_csp(stack):
 def test_no_page_uses_inline_styles_or_scripts(stack):
     app, _, _ = stack
     client, _ = login(app, "admin")
-    for path in ("/", "/incidents", "/incidents/2", "/hunt", "/enrich", "/ask", "/audit", "/nope"):
+    for path in ("/", "/incidents", "/incidents/2", "/hunt", "/enrich", "/audit", "/nope"):
         html = client.get(path).get_data(as_text=True)
         # the one script on a signed-in page is the self-hosted chat widget, loaded by address, never inline
         assert html.count("<script") == 1 and '<script src="/static/chat.js" defer></script>' in html, path
@@ -364,21 +372,19 @@ def test_no_page_uses_inline_styles_or_scripts(stack):
     assert " style=" not in login_page and "<script" not in login_page
 
 
-def test_ask_shows_a_plain_words_box_separate_from_the_technical_answer(stack):
+def test_a_plain_words_part_is_separate_from_the_technical_answer(stack):
     app, _, _ = stack
     client, _ = login(app, "viewer")
-    html = post(client, "/ask", "/ask", question="summarize incident 1").get_data(as_text=True)
-    answer_part, _, plain_part = html.partition('class="panel plain"')
-    assert "In plain words" in plain_part and "monitoring system" in plain_part
-    assert "Not checked" in answer_part                       # the technical answer is in its own box
-    assert "In plain words:" not in answer_part               # the marker itself is not left in it
+    answer = ask(client, "summarize incident 1").get_json()["answer"]
+    assert "monitoring system" in answer["plain"] and "Not checked" in answer["text"]
+    assert "In plain words:" not in answer["text"]
 
 
-def test_ask_shows_no_plain_words_box_for_a_refusal(stack):
+def test_a_refusal_has_no_plain_words_part(stack):
     app, _, _ = stack
     client, _ = login(app, "viewer")
-    html = post(client, "/ask", "/ask", question="What's the weather tomorrow?").get_data(as_text=True)
-    assert "I can only help with this SOC" in html and 'class="panel plain"' not in html
+    answer = ask(client, "What's the weather tomorrow?").get_json()["answer"]
+    assert "I can only help with this SOC" in answer["text"] and not answer["plain"]
 
 
 def test_logout_revokes_a_copied_session_cookie(stack):
@@ -545,33 +551,12 @@ def test_timeline_escapes_comment_text(stack):
     assert "<img src=x" not in html and "&lt;img src=x" in html
 
 
-def test_ask_shows_level_and_examples_that_fit_it(stack):
-    app, _, _ = stack
-    viewer = login(app, "viewer")[0].get("/ask").get_data(as_text=True)
-    assert "<strong>Viewer</strong>" in viewer and "without hostnames or IPs" in viewer
-    assert "Which host is affected by incident 1?" in viewer and "audit log record" not in viewer
-    admin = login(app, "admin")[0].get("/ask").get_data(as_text=True)
-    assert "<strong>Admin</strong>" in admin and "audit log record" in admin
-
-
-def test_example_link_fills_the_box_without_asking(stack):
-    app, _backends, _ = stack
-    client, _ = login(app, "viewer")
-    html = client.get('/ask?q=How%20many%20incidents%3F%22%3E%3Cscript%3E').get_data(as_text=True)
-    assert "How many incidents?&#34;&gt;&lt;script&gt;" in html and "<script>" not in html
-    assert "<h2>Answer</h2>" not in html
-
-
-def test_refusals_get_their_own_panel(stack):
+def test_refusals_are_marked_in_the_answer(stack):
     app, _, _ = stack
     client, _ = login(app, "viewer")
-    clearance = post(client, "/ask", "/ask", question="Which host is affected by incident 1?").get_data(as_text=True)
-    assert 'class="panel refusal"' in clearance and "Not allowed at your level" in clearance
-    assert "outside your clearance level" in clearance and "<h2>Answer</h2>" not in clearance
-    off_topic = post(client, "/ask", "/ask", question="What's the weather tomorrow?").get_data(as_text=True)
-    assert 'class="panel refusal"' in off_topic and "Not something I can help with" in off_topic
-    ok = post(client, "/ask", "/ask", question="How many incidents are open?").get_data(as_text=True)
-    assert 'class="panel refusal"' not in ok and "<h2>Answer</h2>" in ok
+    assert ask(client, "Which host is affected by incident 1?").get_json()["answer"]["refusal"] == "clearance"
+    assert ask(client, "What's the weather tomorrow?").get_json()["answer"]["refusal"] == "off_topic"
+    assert ask(client, "How many incidents are open?").get_json()["answer"]["refusal"] is None
 
 
 def _positions(html, *needles):

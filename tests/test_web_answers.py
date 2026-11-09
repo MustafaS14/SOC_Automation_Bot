@@ -2,7 +2,7 @@ import pytest
 
 from soc_web.answers import Facts, Para, Rows, Table, parse_answer, pretty
 
-from .web_helpers import login, post, stack  # noqa: F401
+from .web_helpers import ask, login, stack  # noqa: F401
 
 INCIDENT = (
     "incident #1: rule=Suspicious discovery commands on soc-victim; severity=High; status=New; classification=n/a; "
@@ -77,24 +77,7 @@ def test_empty_and_blank_input():
     assert parse_answer("").blocks == [] and parse_answer("\n  \n").blocks == []
 
 
-# ---- on the page ----
-
-def test_ask_page_lays_the_incident_out_as_labelled_rows(stack):
-    app, _, _ = stack
-    client, _ = login(app, "read")
-    html = post(client, "/ask", "/ask", question="show me the details of incident 1").get_data(as_text=True)
-    assert '<dl class="facts">' in html and "<dt>Severity</dt>" in html and "sev-High" in html
-    assert 'class="badge conf-low"' in html and "<dt>Not checked</dt>" in html
-    assert "severity=High;" not in html and "status=New;" not in html     # the raw run-on line is gone
-    assert "<dd><span class=\"muted\">none</span></dd>" in html            # n/a reads as "none"
-
-
-def test_ask_page_shows_a_table_for_hunt_results(stack):
-    app, _, _ = stack
-    client, _ = login(app, "read")
-    html = post(client, "/ask", "/ask", question="what commands ran on soc-victim in the last hour?").get_data(as_text=True)
-    assert "<th>Time</th>" in html and "<th>Event</th>" in html and "whoami" in html
-
+# ---- in the chat ----
 
 def test_hostile_text_in_an_answer_is_escaped(stack):
     from soc_web.answers import parse_answer as parse
@@ -104,6 +87,6 @@ def test_hostile_text_in_an_answer_is_escaped(stack):
     app, backends, _ = stack
     backends.runner.run(backends.store.create(rule="<script>alert(1)</script>", severity="High", host="soc-victim"))
     client, _ = login(app, "read")
-    html = post(client, "/ask", "/ask", question="show me the details of incident 6").get_data(as_text=True)
-    # never a live tag; the assistant already escaped it once, so the page shows it as harmless text
-    assert "<script>alert(1)</script>" not in html and "lt;script" in html
+    text = ask(client, "show me the details of incident 6").get_json()["answer"]["text"]
+    # never a live tag; the assistant already escaped it once, and the widget shows text only
+    assert "<script>alert(1)</script>" not in text and "lt;script" in text

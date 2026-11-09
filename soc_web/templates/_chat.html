@@ -1,6 +1,6 @@
-{# The chat widget on every signed-in page. Without JavaScript the round button is a plain link to the Ask page. #}
+{# The chat widget on every signed-in page. The round button needs JavaScript. #}
 {% if user and chat_on %}
-<a id="chat-open" class="chat-fab" href="{{ url_for('ask') }}" aria-label="Open the assistant chat" aria-controls="chat-panel" aria-expanded="false">
+<a id="chat-open" class="chat-fab" href="#chat-panel" aria-label="Open the assistant chat" aria-controls="chat-panel" aria-expanded="false">
   {% if avatar %}<img src="{{ url_for('static', filename=avatar) }}" alt="" width="56" height="56">{% else %}<span aria-hidden="true">AI</span>{% endif %}
 </a>
 <aside id="chat-panel" class="chat" role="dialog" aria-label="Assistant chat" hidden>

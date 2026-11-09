@@ -1,9 +1,6 @@
-"""Follow-up memory on the Ask page: what is kept, what is dropped, and that it can never widen access."""
+"""Follow-up memory for the chat widget: what is kept, what is dropped, and that it can never widen access."""
 
-import re
 from pathlib import Path
-
-import pytest
 
 from soc_bot.ai import Exchange
 from soc_bot.ai.assistant import (
@@ -15,10 +12,9 @@ from soc_bot.ai.assistant import (
 from soc_bot.ai.backends import MockBackend
 from soc_bot.ai.tools import ToolContext
 from soc_bot.rbac import Permission
-from soc_web.app import EXAMPLES, FOLLOW_UP_EXAMPLE
 from soc_web.memory import MAX_USERS, ConversationMemory
 
-from .web_helpers import login, post, stack  # noqa: F401
+from .web_helpers import ask, login, stack  # noqa: F401
 
 # ---- the memory itself -----------------------------------------------------------------------------------------
 
@@ -134,11 +130,10 @@ async def test_a_question_with_a_new_subject_is_not_treated_as_a_follow_up():
 
 # ---- through the console ----------------------------------------------------------------------------------------
 
-_example_link = f'href="/ask?q={FOLLOW_UP_EXAMPLE.replace(" ", "+")}"'
-
-
 def _ask(client, question):
-    return post(client, "/ask", "/ask", question=question).get_data(as_text=True)
+    """The answer's text as the widget shows it (technical part and plain-words part), for a fresh conversation."""
+    answer = ask(client, question).get_json()["answer"]
+    return answer["text"] + " " + (answer["plain"] or "")
 
 
 def test_follow_up_explains_the_previous_answer_for_the_same_user(stack):
@@ -148,16 +143,13 @@ def test_follow_up_explains_the_previous_answer_for_the_same_user(stack):
     assert "scripted mock explanation" not in first
     second = _ask(client, "Explain the output to me better")
     assert "scripted mock explanation" in second and "signed in" in second
-    assert "remembering 1 now" in second  # the explanation itself is not remembered, only the data answer
-    assert _example_link in client.get("/ask").get_data(as_text=True)
 
 
-def test_without_an_earlier_question_there_is_nothing_to_explain_and_no_example(stack):
+def test_without_an_earlier_question_there_is_nothing_to_explain(stack):
     app, _, _ = stack
     client, _ = login(app, "admin")
-    html = _ask(client, "Explain the output to me better")
-    assert "scripted mock explanation" not in html and "Ask me something about the SOC first" in html
-    assert _example_link not in html
+    text = _ask(client, "Explain the output to me better")
+    assert "scripted mock explanation" not in text and "Ask me something about the SOC first" in text
 
 
 def test_lowering_the_tier_drops_what_was_seen_at_the_higher_level(stack):
@@ -165,9 +157,8 @@ def test_lowering_the_tier_drops_what_was_seen_at_the_higher_level(stack):
     client, _ = login(app, "admin")
     _ask(client, "What did the audit log record today?")
     users.set_tier("admin", "viewer")
-    html = _ask(client, "Explain the output to me better")
-    assert "signed in" not in html and "scripted mock explanation" not in html
-    assert _example_link not in html
+    text = _ask(client, "Explain the output to me better")
+    assert "signed in" not in text and "scripted mock explanation" not in text
 
 
 def test_another_account_never_sees_someone_elses_history(stack):
@@ -175,36 +166,31 @@ def test_another_account_never_sees_someone_elses_history(stack):
     admin, _ = login(app, "admin")
     _ask(admin, "What did the audit log record today?")
     other, _ = login(app, "triage")
-    html = _ask(other, "Explain the output to me better")
-    assert "scripted mock explanation" not in html
+    assert "scripted mock explanation" not in _ask(other, "Explain the output to me better")
 
 
 def test_refusals_are_not_remembered(stack):
     app, _, _ = stack
     client, _ = login(app, "viewer")
-    refused = _ask(client, "Which host is affected by incident 1?")
-    assert "Not allowed at your level" in refused
-    html = _ask(client, "Explain the output to me better")
-    assert "scripted mock explanation" not in html
+    assert ask(client, "Which host is affected by incident 1?").get_json()["answer"]["refusal"] == "clearance"
+    assert "scripted mock explanation" not in _ask(client, "Explain the output to me better")
 
 
-def test_forget_and_logout_clear_the_memory(stack):
+def test_logging_out_clears_the_memory(stack):
+    from .web_helpers import post
+
     app, _, _ = stack
     client, _ = login(app, "admin")
-    _ask(client, "What did the audit log record today?")
-    post(client, "/ask/forget", "/ask")
-    assert "scripted mock explanation" not in _ask(client, "Explain the output to me better")
     _ask(client, "What did the audit log record today?")
     post(client, "/logout", "/")
     again, _ = login(app, "admin")
     assert "scripted mock explanation" not in _ask(again, "Explain the output to me better")
 
 
-def test_forget_needs_a_csrf_token_and_a_signed_in_user(stack):
+def test_the_forget_route_is_gone(stack):
     app, _, _ = stack
     client, _ = login(app, "viewer")
-    assert client.post("/ask/forget").status_code == 400
-    assert app.test_client().post("/ask/forget").status_code == 400
+    assert client.post("/ask/forget").status_code >= 400
 
 
 def test_audit_records_that_a_question_was_a_follow_up(stack):
@@ -215,28 +201,3 @@ def test_audit_records_that_a_question_was_a_follow_up(stack):
     backends.audit_log.close()
     text = Path(backends.settings.audit_log_path).read_text(encoding="utf-8")
     assert '"followup": 1' in text
-
-
-# ---- the example links ------------------------------------------------------------------------------------------
-
-REFUSED = re.compile(r"Not allowed at your level|Not something I can help with")
-
-
-@pytest.mark.parametrize("tier", ["viewer", "read", "triage", "response", "admin"])
-def test_every_example_link_gets_a_real_answer_or_an_intended_refusal(stack, tier):
-    """No example leaves a demo user at a dead end: it is answered by the mock, or it is the deliberate refusal demo."""
-    app, _, users = stack
-    if tier == "response":
-        users.create("response", "correct horse battery", "response")
-    client, _ = login(app, tier)
-    examples = EXAMPLES[{"viewer": Permission.VIEWER, "read": Permission.READ, "triage": Permission.TRIAGE,
-                         "response": Permission.RESPONSE, "admin": Permission.ADMIN}[tier]]
-    refused = []
-    for q in examples:
-        html = _ask(client, q)
-        assert "I couldn&#39;t look that up" not in html and "Tell me which host" not in html, q
-        assert "(mock) I can answer questions" not in html, q
-        if REFUSED.search(html):
-            refused.append(q)
-    # the only refusals are the last example (viewer, analyst tiers, responder: above their level; admin: off topic)
-    assert refused == [examples[-1]]

@@ -44,7 +44,7 @@ from soc_bot.store.incidents import ORDERS
 from soc_bot.validators import ValidationError, parse_incident_ref, parse_ip
 
 from . import pagecontext
-from .answers import parse_answer, pretty
+from .answers import pretty
 from .config import WebSettings
 from .conversations import MAX_MESSAGES, Chat, ChatBusy, ChatError, ConversationStore
 from .memory import ConversationMemory
@@ -123,23 +123,6 @@ def build_timeline(inc: Any, acks: list[dict[str, Any]]) -> list[dict[str, Any]]
     return events
 
 
-# Questions worth asking at each level (links that fill the box; nothing is sent until the user presses Ask). A
-# last non-admin example deliberately reaches above the user's level (and the admin's last is off topic), so a
-# refusal can be seen working.
-_ANALYST = ("Summarise incident 1", "Which incidents are open?", "Is 203.0.113.9 known to be malicious?")
-EXAMPLES = {
-    Permission.VIEWER: ("How many incidents are open?", "How many open incidents are High severity?",
-                        "Summarise incident 1", "Which host is affected by incident 1?"),
-    Permission.READ: (*_ANALYST, "What did the audit log record today?"),
-    Permission.TRIAGE: (*_ANALYST, "What did the audit log record today?"),
-    Permission.RESPONSE: (*_ANALYST, "What did the audit log record today?"),
-    Permission.ADMIN: (*_ANALYST, "What did the audit log record today?", "What is the weather like?"),
-}
-
-
-FOLLOW_UP_EXAMPLE = "Explain that in simpler terms"
-
-
 def refusal_kind(text: str, denied: bool) -> str | None:
     """"clearance" or "off_topic" when the assistant declined to answer, else None."""
     stripped = text.strip()
@@ -189,9 +172,9 @@ def audit_query(args: Any) -> tuple[dict[str, str], bool, int]:
 CONTEXT_TIERS = {
     "dashboard": Permission.VIEWER, "incidents": Permission.READ, "incident": Permission.READ,
     "hunt": Permission.READ, "enrich_page": Permission.READ, "enrich_ip": Permission.READ,
-    "audit_view": Permission.ADMIN, "ask": Permission.VIEWER,
+    "audit_view": Permission.ADMIN,
 }
-PAGE_NAMES = {"ask": "Ask page", "enrich_page": "enrich page", "enrich_ip": "enrich page", "hunt": "hunt page"}
+PAGE_NAMES = {"enrich_page": "enrich page", "enrich_ip": "enrich page", "hunt": "hunt page"}
 
 
 def chat_dict(chat: Chat) -> dict[str, Any]:
@@ -618,46 +601,6 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         if lookup_backed:
             memory.add(uid, tier, question, split_plain_words(answer.text)[0], ",".join(answer.tools_used))
         return chat, answer, history
-
-    @app.route("/ask", methods=["GET", "POST"])
-    @needs(Permission.VIEWER)
-    def ask():
-        question, answer, current, transcript = "", None, None, []
-        raw_chat = request.values.get("c", "")
-        chat_id = int(raw_chat) if raw_chat.isdigit() and len(raw_chat) < 10 else None
-        if request.method == "GET":
-            question = request.args.get("q", "").strip()[:500]  # an example link fills the box; nothing is asked yet
-            if chat_id:
-                current = chats.get(g.user.id, g.user.tier, chat_id)
-                transcript = chats.messages(g.user.id, g.user.tier, chat_id) if current else []
-        if request.method == "POST":
-            question = request.form.get("question", "").strip()
-            if backends.assistant is None:
-                flash("The AI assistant is not enabled (AI_BACKEND).", "error")
-            else:
-                try:
-                    current, answer, _ = ask_and_record(question, chat_id, page=None, via="ask",
-                                                        model=chosen_model(request.form.get("model")))
-                except ChatError as exc:
-                    flash(str(exc), "error")
-                except HANDLED as exc:
-                    flash(explain(exc), "error")
-        technical, plain = split_plain_words(answer.text) if answer else ("", None)
-        blocks = parse_answer(technical).blocks if answer else []
-        remembered = memory.count(g.user.id, g.user.tier)
-        return render_template("ask.html", question=question, answer=answer, blocks=blocks, plain=plain,
-                               enabled=backends.assistant is not None, remembered=remembered, memory=memory,
-                               examples=EXAMPLES[g.user.tier] + ((FOLLOW_UP_EXAMPLE,) if remembered else ()),
-                               refusal=refusal_kind(answer.text, answer.denied) if answer else None,
-                               conversations=chats.list(g.user.id, g.user.tier), current=current,
-                               transcript=transcript, model_choice=chosen_model(request.form.get("model")))
-
-    @app.post("/ask/forget")
-    @needs(Permission.VIEWER)
-    def ask_forget():
-        memory.clear(g.user.id)
-        flash("The assistant has forgotten your earlier questions.", "ok")
-        return redirect(url_for("ask"))
 
     # ---- chat widget --------------------------------------------------------------------------------------
 
