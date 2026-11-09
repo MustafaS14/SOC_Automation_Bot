@@ -12,6 +12,7 @@ from typing import Any
 # Things that look like secrets are blanked before anything is written, because questions and comments are free text
 # and people paste keys into them. Not a guarantee, a safety net.
 _SECRET_PATTERNS = [re.compile(p, re.IGNORECASE) for p in (
+    r"\bx-(?:api|webhook)-secret\b\s*[:=]\s*\S+",                      # the bot's own secret headers
     r"\b(?:sk|pk|rk)-[A-Za-z0-9_-]{16,}",                              # API keys (Anthropic, OpenAI style)
     r"\b(?:ghp|gho|ghu|ghs|github_pat)_[A-Za-z0-9_]{20,}",             # GitHub tokens
     r"\bxox[abprs]-[A-Za-z0-9-]{10,}",                                 # Slack tokens

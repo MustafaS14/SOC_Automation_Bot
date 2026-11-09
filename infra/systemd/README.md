@@ -4,7 +4,7 @@ The unit files here are samples with placeholders (user `soc`, `/opt/soc-bot`, `
 
 Each secret lives in its own file that only root can read. systemd hands the service a private copy through `LoadCredential=`, in the directory named by `$CREDENTIALS_DIRECTORY`. The programs read a secret from the environment first (this is how `op run` works on Windows) and, if it is not set, from the file in that directory. The secret is never put into the service's environment or into the unit file, so it does not appear in `systemctl show` or a process listing. Non-secret settings (ports, paths, role and channel IDs) stay in a normal `EnvironmentFile`.
 
-The file name is the setting name in lower case: `DISCORD_TOKEN` is read from `discord_token`. Secrets that can be supplied this way: `DISCORD_TOKEN`, `WEBHOOK_SECRET`, `SPLUNK_TOKEN`, `SPLUNK_HEC_TOKEN`, `ABUSEIPDB_API_KEY`, `VIRUSTOTAL_API_KEY`, `SOC_WEB_SECRET_KEY`.
+The file name is the setting name in lower case: `DISCORD_TOKEN` is read from `discord_token`. Secrets that can be supplied this way: `DISCORD_TOKEN`, `WEBHOOK_SECRET`, `API_SECRET`, `SPLUNK_TOKEN`, `SPLUNK_HEC_TOKEN`, `ABUSEIPDB_API_KEY`, `VIRUSTOTAL_API_KEY`, `SOC_WEB_SECRET_KEY`, `SOC_BOT_API_SECRET`.
 
 ## Set up
 

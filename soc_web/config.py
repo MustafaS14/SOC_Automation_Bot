@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import secrets
 from dataclasses import dataclass, field
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -53,6 +54,13 @@ class WebSettings:
     allowed_hosts: tuple[str, ...] = ()
     # How many reverse proxies sit in front. 0 means none, so X-Forwarded-* headers are ignored and cannot be forged.
     trusted_proxies: int = 0
+    # The bot's read-only incident API on soc-siem. Both set: the console shows live incidents and cannot change them.
+    bot_api_url: str = ""
+    bot_api_secret: str = field(default="", repr=False)
+
+    @property
+    def remote(self) -> tuple[str, str] | None:
+        return (self.bot_api_url, self.bot_api_secret) if self.bot_api_url and self.bot_api_secret else None
 
     @classmethod
     def from_env(cls, *, mock_mode: bool = False) -> WebSettings:
@@ -73,6 +81,8 @@ class WebSettings:
             lockout_minutes=_int_default("SOC_WEB_LOCKOUT_MINUTES", 15),
             allowed_hosts=default_hosts(host, os.getenv("SOC_WEB_ALLOWED_HOSTS", "")),
             trusted_proxies=_int_default("SOC_WEB_TRUSTED_PROXIES", 0),
+            bot_api_url=os.getenv("SOC_BOT_API_URL", "").strip(),
+            bot_api_secret=secret("SOC_BOT_API_SECRET"),
         )
         settings.validate()
         return settings
@@ -87,6 +97,13 @@ class WebSettings:
             raise ConfigError("SOC_WEB_PORT must be between 1 and 65535.")
         if not 0 <= self.trusted_proxies <= 5:
             raise ConfigError("SOC_WEB_TRUSTED_PROXIES must be between 0 and 5.")
+        if bool(self.bot_api_url) != bool(self.bot_api_secret):
+            raise ConfigError("SOC_BOT_API_URL and SOC_BOT_API_SECRET must be set together, or both left empty.")
+        if self.bot_api_url:
+            if urlsplit(self.bot_api_url).scheme not in ("http", "https") or not urlsplit(self.bot_api_url).hostname:
+                raise ConfigError("SOC_BOT_API_URL must look like http://192.168.56.10:8765")
+            if len(self.bot_api_secret) < 32:
+                raise ConfigError("SOC_BOT_API_SECRET must be at least 32 characters (the bot's API_SECRET).")
         if min(self.session_hours, self.max_failed_logins, self.lockout_minutes) < 1:
             raise ConfigError(
                 "SOC_WEB_SESSION_HOURS, SOC_WEB_MAX_FAILED_LOGINS and SOC_WEB_LOCKOUT_MINUTES must be at least 1."

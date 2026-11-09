@@ -19,9 +19,9 @@
   </dl>
 </div>
 
-{% if user.tier >= P.TRIAGE and incident.status != 'Closed' or user.tier >= P.READ and incident.src_ip %}
+{% if user.tier >= P.TRIAGE and incident.status != 'Closed' and not read_only or user.tier >= P.READ and incident.src_ip %}
 <div class="panel actions">
-  {% if user.tier >= P.TRIAGE and incident.status == 'New' %}
+  {% if user.tier >= P.TRIAGE and incident.status == 'New' and not read_only %}
   <form method="post" action="{{ url_for('acknowledge', incident_id=incident.id) }}">{{ csrf() }}
     <button class="primary" type="submit">Acknowledge</button></form>
   {% endif %}
@@ -43,7 +43,7 @@
   {% endfor %}
   </ol>
   {% if not incident.comments %}<p class="muted">No comments yet.</p>{% endif %}
-  {% if user.tier >= P.TRIAGE %}
+  {% if user.tier >= P.TRIAGE and not read_only %}
   <form class="compact" method="post" action="{{ url_for('comment', incident_id=incident.id) }}">{{ csrf() }}
     <textarea id="message" name="message" maxlength="1000" rows="1" placeholder="Add a comment..." aria-label="Add a comment" required></textarea>
     <button type="submit">Add</button>
@@ -51,7 +51,9 @@
   {% endif %}
 </div>
 
-{% if user.tier >= P.TRIAGE and incident.status != 'Closed' %}
+{% if read_only %}
+<p class="muted">Live data from soc-siem. This console cannot acknowledge, comment on or close incidents here.</p>
+{% elif user.tier >= P.TRIAGE and incident.status != 'Closed' %}
 <div class="panel">
   <h2>Close this incident</h2>
   <form class="compact" method="post" action="{{ url_for('close_incident', incident_id=incident.id) }}">{{ csrf() }}

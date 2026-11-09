@@ -37,6 +37,7 @@
 {% if user and sysstatus %}
 <div class="statusbar" role="status" aria-label="System status"><div class="bar">
   <span><b>Mode</b> {{ sysstatus.mode }}</span>
+  {% if sysstatus.bot_api %}<span><b>Incidents</b> <i class="dot st-{{ sysstatus.bot_api }}" aria-hidden="true"></i>{{ {'up': 'live data from soc-siem (read-only)', 'down': 'soc-siem offline', 'checking': 'connecting to soc-siem'}[sysstatus.bot_api] }}</span>{% endif %}
   <span><b>Splunk</b> <i class="dot st-{{ sysstatus.splunk }}" aria-hidden="true"></i>{{ {'up': 'reachable', 'down': 'unreachable', 'off': 'not configured', 'checking': 'checking'}[sysstatus.splunk] }}</span>
   <span><b>AI</b> {{ sysstatus.ai }}</span>
   <span><b>Last alert</b> {{ sysstatus.last_alert|when if sysstatus.last_alert else 'none yet' }}</span>

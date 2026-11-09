@@ -81,6 +81,8 @@ def _serve() -> int:
         settings = Settings.from_env(require_discord=False, console=True)
         web = WebSettings.from_env(mock_mode=settings.mock_mode)
         check_relay_host(settings.ai_backend, web.host)
+        if web.remote and settings.mock_mode:
+            raise ConfigError("SOC_BOT_MOCK=true cannot be combined with SOC_BOT_API_URL: mock mode is demo data only.")
     except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
@@ -93,7 +95,7 @@ def _serve() -> int:
     from .runtime import AsyncRunner, build_backends
 
     runner = AsyncRunner()
-    backends = build_backends(settings, runner)
+    backends = build_backends(settings, runner, web.remote)
     users = _store(web)
     if settings.mock_mode:
         log.warning("MOCK MODE: demo data only, nothing real is read or changed.")

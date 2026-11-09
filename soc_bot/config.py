@@ -112,6 +112,7 @@ class Settings:
     webhook_port: int = 8765
     webhook_secret: str = field(default="", repr=False)
     webhook_rate_limit: int = 30
+    api_secret: str = field(default="", repr=False)  # read-only incident API; its routes exist only when this is set
     webhook_link_hosts: tuple[str, ...] = ()
     splunk_url: str = ""
     splunk_token: str = field(default="", repr=False)
@@ -156,6 +157,7 @@ class Settings:
             webhook_host=os.getenv("WEBHOOK_HOST", "127.0.0.1").strip(),
             webhook_port=_int_default("WEBHOOK_PORT", 8765),
             webhook_secret=secret("WEBHOOK_SECRET"),
+            api_secret=secret("API_SECRET"),
             webhook_rate_limit=_int_default("WEBHOOK_RATE_LIMIT", 30),
             webhook_link_hosts=_str_list("WEBHOOK_LINK_HOSTS"),
             splunk_url=os.getenv("SPLUNK_URL", "").strip().rstrip("/"),
@@ -223,6 +225,11 @@ class Settings:
                     "SOC_BOT_MOCK=true but real backend settings are present (" + ", ".join(real)
                     + "). Unset them or set SOC_BOT_MOCK=false."
                 )
+        if self.api_secret:
+            if len(self.api_secret) < 32:
+                raise ConfigError("API_SECRET must be at least 32 characters.")
+            if self.api_secret == self.webhook_secret:
+                raise ConfigError("API_SECRET must be a different secret from WEBHOOK_SECRET.")
         if self.webhook_rate_limit < 1:
             raise ConfigError("WEBHOOK_RATE_LIMIT must be at least 1.")
         if not 1 <= self.webhook_port <= 65535:

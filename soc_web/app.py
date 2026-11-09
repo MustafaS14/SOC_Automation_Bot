@@ -48,6 +48,7 @@ from .answers import parse_answer, pretty
 from .config import WebSettings
 from .conversations import MAX_MESSAGES, Chat, ChatBusy, ChatError, ConversationStore
 from .memory import ConversationMemory
+from .remote import READ_ONLY
 from .runtime import Backends
 from .security import Throttle, add_headers, check_csrf, csrf_token
 from .status import StatusProbe
@@ -214,6 +215,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=n, x_proto=n, x_host=n)  # type: ignore[method-assign]
     add_headers(app)
     store, runner = backends.store, backends.runner
+    # Incidents read from soc-siem through the bot's API: the console can look but not change anything.
+    read_only = bool(getattr(store, "remote", False))
     login_throttle = Throttle(limit=20, period=300)
     probe = StatusProbe(backends)
     memory = ConversationMemory()
@@ -306,7 +309,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         return {"user": g.get("user"), "P": Permission, "mock": backends.settings.mock_mode,
                 "sysstatus": probe.snapshot() if g.get("user") else None,
                 "level_label": LEVEL_LABELS, "ranks": RANKS, "avatar": avatar,
-                "chat_on": backends.assistant is not None, "chat_models": models_on}
+                "chat_on": backends.assistant is not None, "chat_models": models_on, "read_only": read_only}
 
     @app.template_filter("when")
     def when(dt: Any) -> str:
@@ -327,6 +330,13 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
             429: "Too many attempts. Wait a few minutes and try again.",
         }.get(exc.code or 0, exc.description)
         return render_template("error.html", code=exc.code, message=message), exc.code or 500
+
+    @app.errorhandler(APIError)
+    def upstream(exc: APIError):
+        """soc-siem (or another service) failed on a page that reads from it: say so plainly instead of a 500."""
+        log.warning("%s failed on %s: %s", exc.service, request.path, exc.status)
+        return render_template("error.html", code=502,
+                               message=f"{exc.message} The console is up, but that data is not available right now."), 502
 
     @app.errorhandler(Exception)
     def unexpected(exc: Exception):
@@ -413,9 +423,17 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     def back(incident_id: int):
         return redirect(url_for("incident", incident_id=incident_id))
 
+    def refuse_write(incident_id: int):
+        """Remote mode: the POST is refused before anything is sent, with a message and no change."""
+        flash(READ_ONLY, "error")
+        audit("incident.write", f"#{incident_id}", "denied", reason="read-only")
+        return back(incident_id), 405
+
     @app.post("/incidents/<int:incident_id>/ack")
     @needs(Permission.TRIAGE)
     def acknowledge(incident_id: int):
+        if read_only:
+            return refuse_write(incident_id)
         try:
             call(store.acknowledge(incident_id, author()))
             audit("incident.ack", f"#{incident_id}")
@@ -427,6 +445,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     @app.post("/incidents/<int:incident_id>/comment")
     @needs(Permission.TRIAGE)
     def comment(incident_id: int):
+        if read_only:
+            return refuse_write(incident_id)
         body = request.form.get("message", "").strip()
         if not 1 <= len(body) <= 1000:
             flash("A comment is 1 to 1000 characters.", "error")
@@ -442,6 +462,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     @app.post("/incidents/<int:incident_id>/close")
     @needs(Permission.TRIAGE)
     def close_incident(incident_id: int):
+        if read_only:
+            return refuse_write(incident_id)
         classification = request.form.get("classification", "")
         why = request.form.get("comment", "").strip()
         if classification not in CLASSIFICATIONS:
@@ -473,7 +495,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
             ip = parse_ip(ip_text)
             inc = call(store.get(incident_id)) if incident_id else None
             report = call(backends.enrichment.enrich_ip(str(ip)))
-            if inc:
+            if inc and not read_only:  # the note on the incident is a write, which remote mode does not do
                 score = report.abuse_score if report.abuse_score is not None else "n/a"
                 vt = report.vt_malicious if report.vt_malicious is not None else "n/a"
                 call(store.add_comment(
