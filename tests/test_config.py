@@ -153,12 +153,33 @@ def test_viewer_or_admin_roles_alone_are_enough():
 
 
 def test_ai_backend_must_be_known_and_mock_needs_mock_mode():
-    Settings(**{**BASE, "ai_backend": "claude_code"}).validate()
     with pytest.raises(ConfigError, match="AI_BACKEND"):
         Settings(**{**BASE, "ai_backend": "gpt"}).validate()
     with pytest.raises(ConfigError, match="SOC_BOT_MOCK"):
         Settings(**{**BASE, "ai_backend": "mock"}).validate()
     Settings(**{**BASE, "ai_backend": "mock", "mock_mode": True}).validate()
+
+
+def test_the_discord_bot_refuses_the_real_assistant(monkeypatch):
+    with pytest.raises(ConfigError, match="owner's own PC, through the web console"):
+        Settings(**{**BASE, "ai_backend": "claude_code"}).validate()
+    with pytest.raises(ConfigError, match="AI_BACKEND=claude_code is not allowed for the Discord bot"):
+        _from_env(monkeypatch, AI_BACKEND="claude_code")  # the real startup path is strict too
+    Settings(**{**BASE, "ai_backend": "off"}).validate()
+    Settings(**{**BASE, "ai_backend": "mock", "mock_mode": True}).validate()
+
+
+def test_the_console_may_use_the_real_assistant_only_on_loopback():
+    from soc_web.config import check_relay_host
+
+    Settings(**{**BASE, "ai_backend": "claude_code"}).validate(console=True)  # allowed case
+    for host in ("127.0.0.1", "::1", "localhost", "LOCALHOST"):
+        check_relay_host("claude_code", host)
+    for host in ("0.0.0.0", "::", "", "192.168.56.10", "soc-siem"):
+        with pytest.raises(ConfigError, match="SOC_WEB_HOST"):
+            check_relay_host("claude_code", host)
+    for backend in ("off", "mock"):  # other backends are not restricted
+        check_relay_host(backend, "0.0.0.0")
 
 
 def test_ai_limits_must_be_sane():
