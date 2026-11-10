@@ -2,12 +2,15 @@
 
 What is built, what comes next, and ideas for extending the project. The ideas are not commitments; the order is by value for effort. Current status is in the [README](../README.md).
 
-## Phase 1: finish the pipeline (next)
+## Phase 1: finish the pipeline
 
-1. Build `soc-siem` with Splunk and Logstash; ship the victim's auditd logs through Filebeat. See [lab-build-log.md](lab-build-log.md), section 7.
-2. Write the first detection for the Discovery scenario and connect the Splunk alert to the bot's webhook.
-3. Create the `responder` user on the victim, restrict its SSH key with a forced command, and test isolation from a snapshot.
-4. Record a short demo: attack, alert in Discord, triage, isolation.
+Done: `soc-siem` with Splunk and Logstash, the victim's auditd logs shipped through Filebeat, the Discovery and Masquerading detections, the Splunk alert action posting to the bot, and the web console reading live incidents and running hunts against Splunk ([live-lab.md](live-lab.md)).
+
+Still to do:
+
+1. Create the `responder` user on the victim, restrict its SSH key with a forced command, and test isolation from a snapshot.
+2. Add a retry path for the alert action: a card is lost today when the bot is down at the moment an alert fires.
+3. Record a short demo: attack, alert in Discord, triage, isolation.
 
 ## Phase 2: make it look like real SOC work
 

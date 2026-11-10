@@ -14,6 +14,15 @@ $secure = Read-Host "SOC_BOT_API_SECRET (hidden)" -AsSecureString
 $env:SOC_BOT_API_SECRET = [System.Net.NetworkCredential]::new("", $secure).Password
 if ($env:SOC_BOT_API_SECRET.Length -lt 32) { throw "That is shorter than 32 characters; it is not the bot's API_SECRET." }
 
+# Optional, for the Hunt page (docs/live-lab.md, section 5): open the second tunnel
+#   ssh -N -L 18089:127.0.0.1:8089 soc-siem@192.168.56.10
+# set SPLUNK_URL (and SPLUNK_VERIFY_TLS) before running, and you are asked for the read-only token here.
+if ($env:SPLUNK_URL -and -not $env:SPLUNK_TOKEN) {
+    $tok = Read-Host "SPLUNK_TOKEN (hidden, read-only)" -AsSecureString
+    $env:SPLUNK_TOKEN = [System.Net.NetworkCredential]::new("", $tok).Password
+    if ($env:SPLUNK_TOKEN.Length -lt 100) { throw "That is too short to be a Splunk token (about 500 characters)." }
+}
+
 $env:AI_COMMAND = $claude
 $env:SOC_BOT_MOCK = "false"
 $env:SOC_BOT_API_URL = "http://127.0.0.1:18765"
