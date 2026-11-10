@@ -261,10 +261,9 @@ def test_the_status_strip_says_offline_when_soc_siem_goes_away(remote_stack):
 def test_the_assistant_tools_read_from_soc_siem(remote_stack):
     app, _, _ = remote_stack
     client, _ = login(app, "triage")
-    html = client.get("/ask").get_data(as_text=True)
-    from .web_helpers import token
-    resp = client.post("/ask", data={"csrf_token": token(html), "question": "How many incidents are open?"})
-    text = resp.get_data(as_text=True)
+    from .web_helpers import ask
+    resp = ask(client, "How many incidents are open?")
+    text = resp.get_json()["answer"]["text"]
     assert resp.status_code == 200 and "Discovery commands" in text or "2" in text  # answered from soc-siem's data
 
 

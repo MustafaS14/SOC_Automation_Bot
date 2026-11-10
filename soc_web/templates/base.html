@@ -21,7 +21,6 @@
     <a href="{{ url_for('hunt') }}" {% if request.endpoint == 'hunt' %}class="on"{% endif %}>Hunt</a>
     <a href="{{ url_for('enrich_page') }}" {% if request.endpoint in ('enrich_page', 'enrich_ip') %}class="on"{% endif %}>Enrich</a>
     {% endif %}
-    <a href="{{ url_for('ask') }}" {% if request.endpoint == 'ask' %}class="on"{% endif %}>Ask</a>
     {% if user.tier >= P.ADMIN %}<a href="{{ url_for('audit_view') }}" {% if request.endpoint == 'audit_view' %}class="on"{% endif %}>Audit</a>{% endif %}
   </nav>
   <div class="who">

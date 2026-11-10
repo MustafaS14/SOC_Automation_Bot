@@ -1,5 +1,5 @@
 """The chat widget: conversations kept per user and tier, page context built by the server, and nothing it can do beyond
-what the Ask page already could."""
+what the old Ask page could (it is gone; the widget is the only chat)."""
 
 import json
 import re
@@ -33,7 +33,7 @@ def spy_on(backends):
 
 
 def csrf(client):
-    return token(client.get("/ask").get_data(as_text=True))
+    return token(client.get("/").get_data(as_text=True))
 
 
 def jpost(client, path, payload=None, *, with_csrf=True):
@@ -297,7 +297,7 @@ def test_bad_json_and_bad_ids_are_refused_cleanly(stack):  # noqa: F811
     assert client.get("/chat/conversations/99999").status_code == 404
 
 
-# ---- audit, the Ask page and the page itself ----------------------------------------------------------------------
+# ---- audit and the page itself ----------------------------------------------------------------------
 
 def test_new_conversations_and_every_question_are_audited_with_the_attached_page(stack):  # noqa: F811
     app, backends, _ = stack
@@ -312,28 +312,13 @@ def test_new_conversations_and_every_question_are_audited_with_the_attached_page
     assert "page" not in asks[1] and asks[1]["conversation"] == made["conversation"]["id"]
 
 
-def test_the_ask_page_and_the_widget_share_the_same_conversations(stack):  # noqa: F811
-    app, _, _ = stack
-    client, _ = login(app, "read")
-    html = client.get("/ask").get_data(as_text=True)
-    client.post("/ask", data={"csrf_token": token(html), "question": "Summarise incident 1"})
-    items = listed(client)
-    assert [c["title"] for c in items] == ["Summarise incident 1"]
-    page = client.get(f"/ask?c={items[0]['id']}").get_data(as_text=True)
-    assert "Summarise incident 1" in page and 'name="c"' in page
-    chat(client, "Which incidents are open?", conversation=items[0]["id"])
-    transcript = client.get(f"/ask?c={items[0]['id']}").get_data(as_text=True)
-    assert "Which incidents are open?" in transcript
-    assert "Conversations are kept on the console server" in client.get("/ask").get_data(as_text=True)
-
-
 def test_the_button_is_on_every_signed_in_page_but_not_the_login_page(stack):  # noqa: F811
     app, _, _ = stack
     client, _ = login(app, "admin")
-    for path in ("/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/ask", "/audit"):
+    for path in ("/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/audit"):
         html = client.get(path).get_data(as_text=True)
         assert 'id="chat-open"' in html and 'aria-label="Open the assistant chat"' in html, path
-        assert 'href="/ask"' in html and "<aside id=\"chat-panel\"" in html and "hidden>" in html, path
+        assert 'href="#chat-panel"' in html and "<aside id=\"chat-panel\"" in html and "hidden>" in html, path
     assert "chat-open" not in app.test_client().get("/login").get_data(as_text=True)
 
 
@@ -634,7 +619,6 @@ def test_the_switch_is_shown_only_when_the_real_assistant_is_on(relay_stack, sta
     html = client.get("/").get_data(as_text=True)
     assert 'id="chat-model-sonnet"' in html and 'id="chat-model-haiku"' in html
     assert 'for="chat-model-haiku"' in html and 'role="radiogroup"' in html
-    assert '<option value="haiku"' in client.get("/ask").get_data(as_text=True)
     mock_app, _, _ = stack
     mock_client, _ = login(mock_app, "read")
     assert "chat-model" not in mock_client.get("/").get_data(as_text=True)  # the mock would ignore it
@@ -660,13 +644,7 @@ def test_anything_but_the_two_allowed_models_is_ignored(relay_stack, bad):  # no
     assert seen == [{}]  # no model argument at all: the configured default is used
 
 
-def test_the_ask_page_takes_the_same_choice_and_the_mock_ignores_it(relay_stack, stack):  # noqa: F811
-    app, _, seen = relay_stack
-    client, _ = login(app, "read")
-    html = client.get("/ask").get_data(as_text=True)
-    client.post("/ask", data={"csrf_token": token(html), "question": "Summarise incident 1", "model": "haiku"})
-    client.post("/ask", data={"csrf_token": token(html), "question": "Summarise incident 1", "model": "--evil"})
-    assert seen == [{"model": "haiku"}, {}]
+def test_the_mock_ignores_the_model_choice(stack):  # noqa: F811
     mock_app, mock_backends, _ = stack
     spy = spy_on(mock_backends)
     mock_client, _ = login(mock_app, "read")
@@ -689,7 +667,7 @@ def test_the_backend_builds_the_model_argument_only_from_the_allowed_names():
 
 
 def test_a_failed_answer_records_why_in_the_audit_log(relay_stack):
-    """The Ask page and the widget share this path: when the relay fails, the audit entry says why."""
+    """When the relay fails, the audit entry says why."""
     from soc_bot.ai.backends import BackendError
 
     app, backends, *_ = relay_stack
@@ -699,9 +677,9 @@ def test_a_failed_answer_records_why_in_the_audit_log(relay_stack):
 
     backends.assistant._backend.complete = broken
     client, _ = login(app, "read")
-    html = client.get("/ask").get_data(as_text=True)
-    resp = client.post("/ask", data={"csrf_token": token(html), "question": "Summarise incident 1"})
-    assert b"unavailable" in resp.data and b"not logged in" not in resp.data  # users see nothing of the cause
+    resp = chat(client, "Summarise incident 1")
+    text = resp.get_data(as_text=True)
+    assert "unavailable" in text and "not logged in" not in text  # users see nothing of the cause
     lines = [json.loads(x) for x in Path(backends.settings.audit_log_path).read_text().splitlines()]
     entry = [e for e in lines if e["action"] == "ai.ask"][-1]
     assert entry["outcome"] == "error" and entry["reason"] == "exit status 1: not logged in"

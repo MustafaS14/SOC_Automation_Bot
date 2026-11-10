@@ -74,7 +74,7 @@ class _Fields(HTMLParser):
             self.fields.append(a)
 
 
-PAGES = ["/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/ask", "/audit"]
+PAGES = ["/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/audit"]
 
 
 def test_every_form_field_has_a_label(stack):

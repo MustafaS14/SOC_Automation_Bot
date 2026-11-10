@@ -234,7 +234,7 @@
   }
 
   fab.addEventListener("click", function (ev) {
-    ev.preventDefault();  // without JavaScript the button is a link to the Ask page
+    ev.preventDefault();
     if (panel.hidden) { openPanel(); } else { closePanel(); }
   });
   $("chat-close").addEventListener("click", closePanel);
