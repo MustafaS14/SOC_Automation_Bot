@@ -16,7 +16,15 @@ The rest of this page is for the person setting it up.
 
 > **Localhost only, unless a TLS proxy is in front.** The server speaks plain HTTP, so sign-in passwords and session cookies cross the network unencrypted on any address other than `127.0.0.1`. It binds to `127.0.0.1` by default. To reach it from another machine, put a TLS reverse proxy in front and keep `SOC_WEB_SECURE_COOKIES=true`. The console logs a warning if it is started on any other address.
 
-![Dashboard in the demo (mock) mode](screenshots/dashboard.png)
+![The dashboard on live lab data: threat level, incident counts and the latest open incident](screenshots/dashboard.png)
+
+One real run in the lab: a Caldera agent disguised as `splunkd` produced two incidents. Below are the cards the bot posted to Discord, a Hunt for the attacker address, and the chat assistant explaining both incidents.
+
+![The two Discord incident cards: a discovery burst and a masquerading process](screenshots/discord-cards.png)
+
+![Hunt for the attacker address, showing the agent download and start](screenshots/hunt.png)
+
+![The chat assistant explaining incidents 22 and 23](screenshots/chat-answer.png)
 
 ## What it does
 
