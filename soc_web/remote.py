@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 
 from soc_bot.clients.base import APIError, NotFoundError
-from soc_bot.models import Comment, Incident, _parse_dt
+from soc_bot.models import Comment, Incident, _parse_dt, parse_techniques
 
 SERVICE = "soc-siem"
 TIMEOUT = httpx.Timeout(5.0, connect=3.0)
@@ -38,6 +38,7 @@ def _incident(data: dict[str, Any]) -> Incident:
         assignee=data.get("assignee"), description=str(data.get("description") or ""), url=data.get("url"),
         classification=data.get("classification"), created=_parse_dt(data.get("created")),
         updated=_parse_dt(data.get("updated")), comments=comments,
+        techniques=parse_techniques(data.get("techniques")),
     )
 
 
@@ -73,8 +74,9 @@ class RemoteIncidentStore:
             raise APIError(SERVICE, 502, "The incident API sent something that is not JSON.") from exc
 
     async def list(self, status: str = "open", severity: str | None = None, limit: int = 10,
-                   order: str = "newest") -> list[Incident]:
-        body = await self._get("/api/incidents", status=status, severity=severity, limit=limit, order=order)
+                   order: str = "newest", technique: str | None = None) -> list[Incident]:
+        body = await self._get("/api/incidents", status=status, severity=severity, limit=limit, order=order,
+                               technique=technique)
         try:
             return [_incident(row) for row in body["incidents"]]
         except (KeyError, TypeError, ValueError) as exc:

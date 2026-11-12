@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 from typing import Any, TypeVar
 
 from ..clients.base import APIError, NotFoundError
-from ..models import Comment, Incident
+from ..models import TECHNIQUE_RE, Comment, Incident, parse_techniques
 
 T = TypeVar("T")
 
@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     description TEXT NOT NULL DEFAULT '',
     url TEXT,
     classification TEXT,
+    techniques TEXT NOT NULL DEFAULT '',
     created TEXT NOT NULL,
     updated TEXT NOT NULL
 );
@@ -71,7 +72,15 @@ class IncidentStore:
         self._db = sqlite3.connect(path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.executescript(_SCHEMA)
+        self._migrate()
         self._lock = threading.Lock()
+
+    def _migrate(self) -> None:
+        """Bring a database made by an older version up to date. Safe to run every time."""
+        columns = {row["name"] for row in self._db.execute("PRAGMA table_info(incidents)")}
+        if "techniques" not in columns:
+            with self._db:
+                self._db.execute("ALTER TABLE incidents ADD COLUMN techniques TEXT NOT NULL DEFAULT ''")
 
     def shutdown(self) -> None:
         with self._lock:
@@ -96,16 +105,18 @@ class IncidentStore:
         src_ip: str | None = None,
         description: str = "",
         url: str | None = None,
+        techniques: list[str] | None = None,
     ) -> Incident:
         if severity not in SEVERITIES:
             raise ValueError(f"Unknown severity {severity!r}")
+        tags = ",".join(parse_techniques(techniques or []))
 
         def op(db: sqlite3.Connection) -> Incident:
             now = _now()
             cur = db.execute(
-                "INSERT INTO incidents (rule, severity, host, src_ip, description, url, created, updated) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (rule, severity, host, src_ip, description, url, now, now),
+                "INSERT INTO incidents (rule, severity, host, src_ip, description, url, techniques, created, updated) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (rule, severity, host, src_ip, description, url, tags, now, now),
             )
             row = db.execute("SELECT * FROM incidents WHERE id = ?", (cur.lastrowid,)).fetchone()
             return Incident.from_row(row)
@@ -113,7 +124,12 @@ class IncidentStore:
         return await self._run(op)
 
     async def list(
-        self, status: str = "open", severity: str | None = None, limit: int = 10, order: str = "newest"
+        self,
+        status: str = "open",
+        severity: str | None = None,
+        limit: int = 10,
+        order: str = "newest",
+        technique: str | None = None,
     ) -> list[Incident]:
         if order not in ORDERS:
             raise ValueError(f"Unknown order {order!r}")
@@ -121,6 +137,8 @@ class IncidentStore:
             raise ValueError(f"Unknown status {status!r}")
         if severity is not None and severity not in SEVERITIES:
             raise ValueError(f"Unknown severity {severity!r}")
+        if technique is not None and not TECHNIQUE_RE.match(technique):
+            raise ValueError(f"Unknown technique {technique!r}")
 
         def op(db: sqlite3.Connection) -> list[Incident]:
             sql = f"SELECT * FROM incidents WHERE {_STATUS_SQL[status]}"
@@ -128,6 +146,14 @@ class IncidentStore:
             if severity:
                 sql += " AND severity = ?"
                 params.append(severity)
+            if technique:
+                # The ID was checked above, so it holds no LIKE wildcard. A parent ID also matches its sub-techniques.
+                sql += " AND (',' || techniques || ',' LIKE ?"
+                params.append(f"%,{technique},%")
+                if "." not in technique:
+                    sql += " OR ',' || techniques || ',' LIKE ?"
+                    params.append(f"%,{technique}.%")
+                sql += ")"
             sql += f" ORDER BY {ORDERS[order]} LIMIT ?"
             params.append(max(1, min(limit, 50)))
             return [Incident.from_row(r) for r in db.execute(sql, params)]

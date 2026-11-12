@@ -133,7 +133,7 @@ async def test_the_list_does_not_carry_comments(api):
 async def test_only_incident_fields_come_back(api):
     body = await (await api.get("/api/incidents/1", headers=HEADERS)).json()
     assert set(body) == {"id", "rule", "severity", "status", "host", "src_ip", "assignee", "description", "url",
-                         "classification", "created", "updated", "comments"}
+                         "classification", "created", "updated", "comments", "techniques"}
 
 
 async def test_counts_match_the_store(api):
@@ -208,3 +208,22 @@ async def test_errors_are_generic_with_no_stack_trace(seeded):
     assert resp.status == 500 and "secret internal detail" not in text and "Traceback" not in text
     assert await resp.json() == {"error": "internal error"}
     store.shutdown()
+
+
+async def test_techniques_are_in_the_json_and_can_be_filtered(api):
+    await api.store.create(rule="Masq", severity="High", techniques=["T1036.004"])
+    await api.store.create(rule="Recon", severity="Medium", techniques=["T1033", "T1057"])
+    rows = (await (await api.get("/api/incidents?status=all&limit=50", headers=HEADERS)).json())["incidents"]
+    assert {r["rule"]: r["techniques"] for r in rows}["Recon"] == ["T1033", "T1057"]
+    assert all(isinstance(r["techniques"], list) for r in rows)
+
+    hit = (await (await api.get("/api/incidents?technique=T1057", headers=HEADERS)).json())["incidents"]
+    assert [r["rule"] for r in hit] == ["Recon"]
+    parent = (await (await api.get("/api/incidents?technique=T1036", headers=HEADERS)).json())["incidents"]
+    assert [r["rule"] for r in parent] == ["Masq"]
+
+
+async def test_a_malformed_technique_filter_is_400(api):
+    for value in ("T1", "x", "T1036.4", "%25", "T1036%27%20OR%201=1"):
+        resp = await api.get(f"/api/incidents?technique={value}", headers=HEADERS)
+        assert resp.status == 400, value

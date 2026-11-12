@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 
 from aiohttp import web
 
-from .models import Incident
+from .models import Incident, parse_techniques
 from .store import SEVERITIES, IncidentStore
 from .validators import ValidationError, parse_hostname, parse_ip
 
@@ -88,6 +88,7 @@ def parse_alert(payload: Any, link_hosts: frozenset[str] = frozenset()) -> dict[
         "src_ip": src_ip,
         "description": _text(result.get("_raw") or result.get("description"), 1000) or "",
         "url": _link(payload.get("results_link"), link_hosts),
+        "techniques": parse_techniques(result.get("techniques")),
     }
 
 

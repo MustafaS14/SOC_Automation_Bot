@@ -128,3 +128,55 @@ async def test_list_orders_and_rejects_unknown_order():
     with pytest.raises(ValueError):
         await store.list("all", None, 10, "id; DROP TABLE incidents")
     store.shutdown()
+
+
+async def test_techniques_round_trip_and_filter(store):
+    await store.create(rule="Masq", severity="High", techniques=["T1036.004"])
+    await store.create(rule="Recon", severity="Medium", techniques=["T1033", "T1087.001", "T1057"])
+    await store.create(rule="Untagged", severity="Low")
+
+    assert (await store.get(2)).techniques == ["T1033", "T1087.001", "T1057"]
+    assert (await store.get(3)).techniques == []
+    assert [i.rule for i in await store.list(technique="T1087.001")] == ["Recon"]
+    assert [i.rule for i in await store.list(technique="T1036")] == ["Masq"]  # a parent matches its sub-techniques
+    assert [i.rule for i in await store.list(technique="T1036.004")] == ["Masq"]
+    assert [i.rule for i in await store.list(technique="T1087")] == ["Recon"]
+    assert await store.list(technique="T9999") == []
+
+
+async def test_technique_input_is_cleaned_before_it_is_stored(store):
+    inc = await store.create(rule="r", severity="Low", techniques=["T1033", "<script>", "t1033", "T1057 T1082"])
+    assert inc.techniques == ["T1033", "T1057", "T1082"]
+
+
+async def test_a_bad_technique_filter_is_refused_not_sent_to_sql(store):
+    for bad in ("", "T1", "T1033' OR '1'='1", "%", "T1033.%"):
+        with pytest.raises(ValueError):
+            await store.list(technique=bad)
+
+
+async def test_an_old_database_gains_the_column_and_keeps_its_incidents(tmp_path):
+    import sqlite3
+
+    path = str(tmp_path / "old.db")
+    db = sqlite3.connect(path)
+    db.executescript("""
+        CREATE TABLE incidents (id INTEGER PRIMARY KEY AUTOINCREMENT, rule TEXT NOT NULL, severity TEXT NOT NULL,
+            host TEXT, src_ip TEXT, status TEXT NOT NULL DEFAULT 'New', assignee TEXT,
+            description TEXT NOT NULL DEFAULT '', url TEXT, classification TEXT, created TEXT NOT NULL,
+            updated TEXT NOT NULL);
+        CREATE TABLE comments (id INTEGER PRIMARY KEY AUTOINCREMENT, incident_id INTEGER NOT NULL,
+            author TEXT NOT NULL, body TEXT NOT NULL, created TEXT NOT NULL);
+        INSERT INTO incidents (rule, severity, created, updated) VALUES ('Old alert', 'High', 'x', 'x');
+    """)
+    db.commit()
+    db.close()
+
+    store = IncidentStore(path)
+    try:
+        assert (await store.get(1)).techniques == []
+        new = await store.create(rule="New alert", severity="High", techniques=["T1036.004"])
+        assert new.techniques == ["T1036.004"]
+    finally:
+        store.shutdown()
+    IncidentStore(path).shutdown()  # opening it a second time must not try to add the column again

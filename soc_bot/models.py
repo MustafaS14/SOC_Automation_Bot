@@ -1,9 +1,36 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+
+# MITRE ATT&CK technique or sub-technique ID, for example T1036 or T1036.004.
+TECHNIQUE_RE = re.compile(r"^T\d{4}(\.\d{3})?$")
+MAX_TECHNIQUES = 12
+
+
+def parse_techniques(value: Any) -> list[str]:
+    """Technique IDs from a list or from text separated by commas, spaces or semicolons.
+
+    Anything that is not a well-formed ID is dropped, so free text can never reach a card, a page or a query
+    through this field. Order is kept, duplicates are removed and the list is capped.
+    """
+    if isinstance(value, str):
+        parts: list[Any] = re.split(r"[,;\s]+", value)
+    elif isinstance(value, (list, tuple)):
+        parts = []
+        for item in value:
+            parts.extend(re.split(r"[,;\s]+", item) if isinstance(item, str) else [])
+    else:
+        return []
+    found: list[str] = []
+    for part in parts:
+        tag = part.strip().upper()
+        if TECHNIQUE_RE.match(tag) and tag not in found:
+            found.append(tag)
+    return found[:MAX_TECHNIQUES]
 
 
 def _parse_dt(value: str | None) -> datetime | None:
@@ -41,9 +68,14 @@ class Incident:
     created: datetime | None = None
     updated: datetime | None = None
     comments: list[Comment] = field(default_factory=list)
+    techniques: list[str] = field(default_factory=list)
 
     @classmethod
     def from_row(cls, row: Mapping[str, Any], comments: list[Comment] | None = None) -> Incident:
+        try:
+            techniques = parse_techniques(row["techniques"])
+        except (KeyError, IndexError):  # a row from a database or test that predates the column
+            techniques = []
         return cls(
             id=row["id"],
             rule=row["rule"],
@@ -58,6 +90,7 @@ class Incident:
             created=_parse_dt(row["created"]),
             updated=_parse_dt(row["updated"]),
             comments=comments or [],
+            techniques=techniques,
         )
 
 
