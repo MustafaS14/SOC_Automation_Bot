@@ -39,6 +39,7 @@ from soc_bot.ai.tools import LEVEL_LABELS
 from soc_bot.audit import entry_channel, entry_denied, search
 from soc_bot.clients import APIError, NotConfiguredError, NotFoundError
 from soc_bot.rbac import Permission
+from soc_bot.models import TECHNIQUE_RE
 from soc_bot.store import CLASSIFICATIONS, SEVERITIES
 from soc_bot.store.incidents import ORDERS
 from soc_bot.validators import ValidationError, parse_incident_ref, parse_ip
@@ -378,17 +379,19 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         status = status if status in STATUSES else "open"
         severity = request.args.get("severity") or None
         severity = severity if severity in SEVERITIES else None
+        technique = (request.args.get("technique") or "").strip().upper()
+        technique = technique if TECHNIQUE_RE.match(technique) else None
         try:
             limit = max(1, min(int(request.args.get("limit", "25")), 50))
         except ValueError:
             limit = 25
         order = request.args.get("order", "newest")
         order = order if order in ORDERS else "newest"
-        rows = call(store.list(status, severity, limit, order))
-        audit("incident.list", status, severity=severity, count=len(rows), order=order)
+        rows = call(store.list(status, severity, limit, order, technique=technique))
+        audit("incident.list", status, severity=severity, technique=technique, count=len(rows), order=order)
         return render_template("incidents.html", incidents=rows, status=status, severity=severity, limit=limit,
                                order=order, orders=ORDER_LABELS, statuses=STATUSES, severities=SEVERITIES,
-                               filtered=(status, severity) != ("open", None))
+                               technique=technique, filtered=(status, severity, technique) != ("open", None, None))
 
     @app.get("/incidents/<int:incident_id>")
     @needs(Permission.READ)

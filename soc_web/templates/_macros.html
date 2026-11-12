@@ -18,7 +18,7 @@
     <a class="slot sev-{{ i.severity }}" href="{{ url_for('incident', incident_id=i.id) }}">
       <div class="main">
         <div class="name">{{ i.rule }}</div>
-        <div class="meta">#{{ i.id }} &middot; {{ i.host or 'no host' }} &middot; {{ i.status }} &middot; updated {{ i.updated|when }}</div>
+        <div class="meta">#{{ i.id }} &middot; {{ i.host or 'no host' }} &middot; {{ i.status }} &middot; updated {{ i.updated|when }}{% if i.techniques %} &middot; {{ i.techniques|join(', ') }}{% endif %}</div>
       </div>
       <div class="tag">{{ sev(i.severity) }}</div>
     </a>

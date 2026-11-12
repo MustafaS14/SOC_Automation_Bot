@@ -13,6 +13,8 @@
       <option value="">Any</option>
       {% for s in severities %}<option value="{{ s }}" {% if s == severity %}selected{% endif %}>{{ s }}</option>{% endfor %}
     </select></div>
+  <div><label for="technique">ATT&amp;CK technique</label>
+    <input type="text" id="technique" name="technique" placeholder="T1036" maxlength="8" pattern="T[0-9]{4}(\.[0-9]{3})?" value="{{ technique or '' }}"></div>
   <div><label for="order">Sort by</label>
     <select id="order" name="order">
       {% for key, label in orders.items() %}<option value="{{ key }}" {% if key == order %}selected{% endif %}>{{ label }}</option>{% endfor %}
