@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Timeline - SOC Console{% endblock %}
+{% macro chart(c, id, title, empty_text) %}
+<svg class="tl-svg" viewBox="0 0 {{ c.width }} {{ c.height }}" role="img" aria-labelledby="{{ id }}-t" focusable="false">
+  <title id="{{ id }}-t">{{ title }}</title>
+  {% for t in c.yticks %}
+  <line class="tl-grid" x1="{{ c.left }}" x2="{{ c.right }}" y1="{{ t.y }}" y2="{{ t.y }}"/>
+  <text class="tl-ytick" x="{{ c.left - 8 }}" y="{{ t.y + 4 }}" text-anchor="end">{{ t.label }}</text>
+  {% endfor %}
+  <line class="tl-axis" x1="{{ c.left }}" x2="{{ c.right }}" y1="{{ c.base }}" y2="{{ c.base }}"/>
+  {% for t in c.xticks %}
+  <line class="tl-tick" x1="{{ t.x }}" x2="{{ t.x }}" y1="{{ c.base }}" y2="{{ c.base + 5 }}"/>
+  <text class="tl-xtick" x="{{ t.x }}" y="{{ c.base + 19 }}" text-anchor="middle">{{ t.label }}</text>
+  {% if t.sub %}<text class="tl-xsub" x="{{ t.x }}" y="{{ c.base + 32 }}" text-anchor="middle">{{ t.sub }}</text>{% endif %}
+  {% endfor %}
+  {% for col in c.columns %}
+  <g class="tl-col" data-i="{{ col.i }}">{% for s in col.segments %}<path class="f-{{ s.cls }}" d="{{ s.path }}"/>{% endfor %}<rect class="tl-hit" data-i="{{ col.i }}" x="{{ col.x }}" y="{{ c.top }}" width="{{ col.w }}" height="{{ c.plot_h }}"/></g>
+  {% endfor %}
+  <line class="tl-cross" x1="0" x2="0" y1="{{ c.top }}" y2="{{ c.base }}" hidden/>
+  {% if c.empty %}<text class="tl-empty" x="{{ (c.left + c.right) / 2 }}" y="{{ c.top + c.plot_h / 2 }}" text-anchor="middle">{{ empty_text }}</text>{% endif %}
+</svg>
+{% endmacro %}
+{% block content %}
+{% set r = v.range %}
+<h1>Timeline</h1>
+<form method="get" action="{{ url_for('timeline_page') }}" class="filters tl-filters">
+  <div class="tl-presets" role="group" aria-label="Quick time frames">
+    {% for key, preset in presets.items() %}<a class="tl-chip{% if key == r.preset %} on{% endif %}" href="{{ url_for('timeline_page', range=key) }}"{% if key == r.preset %} aria-current="true"{% endif %}>{{ preset[0] }}</a>{% endfor %}
+  </div>
+  <div><label for="from">From (UTC)</label><input type="datetime-local" id="from" name="from" value="{{ r.from_text }}" required></div>
+  <div><label for="to">To (UTC)</label><input type="datetime-local" id="to" name="to" value="{{ r.to_text }}" required></div>
+  <button type="submit">Show</button>
+</form>
+{% if r.error %}<div class="flash error">{{ r.error }}</div>{% endif %}
+
+{% if v.tiles %}
+<div class="row tl-tiles">
+  {% if v.alerts %}
+  <div class="stat"><div class="l">Alerts in this period</div><div class="n">{{ v.tiles.alerts }}</div>
+    <div class="muted">{% if v.tiles.top_type %}Most common: {{ v.tiles.top_type }} ({{ v.tiles.top_type_count }}){% else %}No alerts fired{% endif %}</div></div>
+  <div class="stat"><div class="l">Busiest alert slot</div><div class="n">{{ v.tiles.alert_peak }}</div>
+    <div class="muted">{{ v.tiles.alert_peak_when or 'nothing to show' }}</div></div>
+  {% endif %}
+  {% if v.activity %}
+  <div class="stat"><div class="l">Log lines in this period</div><div class="n">{{ v.tiles.activity }}</div>
+    <div class="muted">Commands, logins, sudo and system messages</div></div>
+  <div class="stat"><div class="l">Peak activity</div><div class="n">{{ v.tiles.activity_peak }}</div>
+    <div class="muted">{{ v.tiles.activity_peak_when or 'nothing to show' }}</div></div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="panel tl" id="tl" data-tips='{{ v.tips|tojson }}'>
+  <h2>Detected attacks</h2>
+  <p class="muted tl-sub">Alerts per {{ v.slot_name }}, stacked by attack type. Each slot starts at the time under its tick (UTC).</p>
+  {% if v.alerts %}
+    {{ chart(v.alerts, 'tl-a', 'Alerts per ' ~ v.slot_name ~ ', by attack type', 'No alerts in this period') }}
+    <ul class="tl-legend" aria-label="Attack types">
+      {% for e in v.alerts.legend %}<li><i class="sw sw-{{ e.cls }}" aria-hidden="true"></i><span>{{ e.label }}</span> <b>{{ e.total }}</b>
+        {% if e.techniques %}<span class="tl-tech"><span class="muted">ATT&amp;CK</span> {% for t in e.techniques %}<a class="attack" href="{{ tech_url(t) }}" rel="noopener noreferrer">{{ t }}</a>{% endfor %}</span>{% endif %}</li>{% endfor %}
+    </ul>
+  {% else %}<p class="muted">Alerts are unavailable right now. {{ notes.alerts }}</p>{% endif %}
+
+  <h2 class="tl-gap">Log activity</h2>
+  <p class="muted tl-sub">Log lines from the monitored host per {{ v.slot_name }}, stacked by kind. Same time axis as above, its own scale.</p>
+  {% if v.activity %}
+    {{ chart(v.activity, 'tl-b', 'Log lines per ' ~ v.slot_name ~ ', by kind of activity', 'No log activity in this period') }}
+    <ul class="tl-legend" aria-label="Kinds of activity">
+      {% for e in v.activity.legend %}<li><i class="sw sw-{{ e.cls }}" aria-hidden="true"></i><span>{{ e.label }}</span> <b>{{ e.total }}</b></li>{% endfor %}
+    </ul>
+  {% else %}<p class="muted">Log activity is unavailable right now. {{ notes.activity }}</p>{% endif %}
+
+  <details class="tl-table">
+    <summary>Show as a table</summary>
+    {% if v.table %}
+    <table>
+      <thead><tr><th>Time slot (UTC)</th>{% for h in v.headers %}<th>{{ h.label }}<div class="muted tl-group">{{ h.group }}</div></th>{% endfor %}</tr></thead>
+      <tbody>{% for row in v.table %}<tr><td>{{ row.when }}</td>{% for n in row.cells %}<td>{{ n or '' }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table>
+    <p class="muted">Only slots with something in them are listed.</p>
+    {% else %}<p class="muted">Nothing happened in this period.</p>{% endif %}
+  </details>
+</div>
+<div id="tl-tip" class="tl-tip" role="tooltip" hidden></div>
+<script src="{{ url_for('static', filename='timeline.js') }}" defer></script>
+{% endblock %}

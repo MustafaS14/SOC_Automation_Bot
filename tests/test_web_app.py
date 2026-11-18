@@ -9,7 +9,7 @@ from .web_helpers import PASSWORD, ask, login, post, stack, token  # noqa: F401
 def test_login_required_everywhere(stack):
     app, _, _ = stack
     client = app.test_client()
-    for path in ("/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/audit"):
+    for path in ("/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/audit", "/timeline", "/heartbeat.json"):
         resp = client.get(path)
         assert resp.status_code == 302 and "/login" in resp.headers["Location"], path
 

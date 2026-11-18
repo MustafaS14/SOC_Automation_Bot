@@ -15,6 +15,8 @@ from ..models import TECHNIQUE_RE, Comment, Incident, parse_techniques
 T = TypeVar("T")
 
 SEVERITIES = ("High", "Medium", "Low", "Informational")
+MAX_TIMELINE_BUCKETS = 500
+MAX_TIMELINE_ROWS = 20000
 CLASSIFICATIONS = ("true_positive", "false_positive", "benign")
 
 # Fixed map so status filters never reach SQL as text.
@@ -157,6 +159,36 @@ class IncidentStore:
             sql += f" ORDER BY {ORDERS[order]} LIMIT ?"
             params.append(max(1, min(limit, 50)))
             return [Incident.from_row(r) for r in db.execute(sql, params)]
+
+        return await self._run(op)
+
+    async def timeline(self, start: datetime, end: datetime, bucket: int) -> dict[str, list[int]]:
+        """How many incidents were created in each `bucket`-second slot from `start` to `end`, by rule.
+
+        Returns {rule: [count for slot 0, slot 1, ...]}; `start` and `end` must be timezone-aware. The console draws its
+        timeline from this, because `list` stops at 50 incidents.
+        """
+        if bucket < 1 or end <= start or (end - start).total_seconds() / bucket > MAX_TIMELINE_BUCKETS:
+            raise ValueError("The timeline range or bucket size is not valid")
+        slots = int(-(-(end - start).total_seconds() // bucket))
+
+        def op(db: sqlite3.Connection) -> dict[str, list[int]]:
+            series: dict[str, list[int]] = {}
+            rows = db.execute(
+                "SELECT rule, created FROM incidents WHERE created >= ? AND created < ? ORDER BY id LIMIT ?",
+                (start.isoformat(), end.isoformat(), MAX_TIMELINE_ROWS),
+            )
+            for row in rows:
+                try:
+                    when = datetime.fromisoformat(row["created"].replace("Z", "+00:00"))
+                except ValueError:
+                    continue
+                if when.tzinfo is None:
+                    when = when.replace(tzinfo=timezone.utc)
+                index = int((when - start).total_seconds() // bucket)
+                if 0 <= index < slots:
+                    series.setdefault(row["rule"], [0] * slots)[index] += 1
+            return series
 
         return await self._run(op)
 

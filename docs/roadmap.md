@@ -28,7 +28,7 @@ Still to do:
 | Idea | Why it matters |
 |---|---|
 | Automatic first response: on a high-severity alert, the bot runs `/hunt` and `/enrich` and attaches the results to the incident before an analyst opens it | This is the "automation" in the project name |
-| A Splunk dashboard: alerts over time, top hosts, open versus closed incidents | Quick to build and good for screenshots |
+| A Splunk dashboard: alerts over time, top hosts, open versus closed incidents. **Alerts over time by attack type, next to raw log activity, is done** as the console's Timeline tab ([web-console.md](web-console.md)); top hosts and open versus closed are still open | Quick to build and good for screenshots |
 | `/report`: a markdown summary of an incident (alert, actions, who did what, outcome) | Mirrors the post-incident reports real teams write |
 | Match source IPs and file hashes against a free threat-intel feed | Raises severity automatically on a hit |
 

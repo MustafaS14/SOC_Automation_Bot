@@ -10,6 +10,7 @@ from __future__ import annotations
 import hmac
 import logging
 import time
+from datetime import datetime, timezone
 from collections.abc import Callable
 from typing import Any
 
@@ -19,7 +20,7 @@ from .audit import redact
 from .clients.base import NotFoundError
 from .models import TECHNIQUE_RE, Comment, Incident
 from .store import SEVERITIES, IncidentStore
-from .store.incidents import _STATUS_SQL, ORDERS
+from .store.incidents import _STATUS_SQL, MAX_TIMELINE_BUCKETS, ORDERS
 from .webhook import RateLimiter
 
 log = logging.getLogger("soc_bot")
@@ -27,6 +28,7 @@ log = logging.getLogger("soc_bot")
 STATUSES = tuple(_STATUS_SQL)
 MAX_LIMIT = 50
 MIN_SECRET_LENGTH = 32
+MAX_TIMELINE_SPAN = 40 * 86400  # seconds
 
 
 def _iso(value: Any) -> str | None:
@@ -111,6 +113,29 @@ def register(
     async def counts(request: web.Request) -> web.Response:
         return web.json_response(await store.counts())
 
+    async def timeline(request: web.Request) -> web.Response:
+        """Incident counts per time slot and rule, for the console's timeline. Epoch seconds in, whole numbers out."""
+        q = request.query
+        try:
+            start, end, bucket = int(q["start"]), int(q["end"]), int(q["bucket"])
+        except (KeyError, ValueError):
+            return _error(400, "start, end and bucket must be whole numbers (epoch seconds)")
+        if bucket < 60 or end <= start or end - start > MAX_TIMELINE_SPAN or (end - start) / bucket > MAX_TIMELINE_BUCKETS:
+            return _error(400, "the range or the bucket size is not valid")
+        try:
+            series = await store.timeline(
+                datetime.fromtimestamp(start, timezone.utc), datetime.fromtimestamp(end, timezone.utc), bucket
+            )
+        except (ValueError, OverflowError, OSError):
+            return _error(400, "the range or the bucket size is not valid")
+        merged: dict[str, list[int]] = {}
+        for rule, counts in series.items():  # rule names are free text from Splunk: redact, and merge names that now match
+            name = redact(rule) or "(unnamed)"
+            into = merged.setdefault(name, [0] * len(counts))
+            for i, n in enumerate(counts):
+                into[i] += n
+        return web.json_response({"start": start, "end": end, "bucket": bucket, "series": merged})
+
     async def one_incident(request: web.Request) -> web.Response:
         try:
             inc = await store.get(int(request.match_info["incident_id"]))
@@ -122,3 +147,4 @@ def register(
     app.router.add_get("/api/incidents", guard(list_incidents))
     app.router.add_get("/api/incidents/{incident_id}", guard(one_incident))
     app.router.add_get("/api/counts", guard(counts))
+    app.router.add_get("/api/timeline", guard(timeline))

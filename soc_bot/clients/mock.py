@@ -39,6 +39,23 @@ class MockSplunkClient:
 
     async def search(self, spl: str, earliest: str = "-1h", latest: str = "now") -> list[dict[str, str]]:
         await asyncio.sleep(0.4)
+        if "stats count by b kind" in spl:
+            # Demo activity: a steady trickle of cron and logins, with a burst of commands in the middle of the window.
+            import re
+
+            size = int(re.search(r"floor\(_time/(\d+)\)", spl).group(1))
+            first, last = int(float(earliest)) // size * size, int(float(latest)) // size * size
+            slots = list(range(first, last, size))
+            rows = []
+            for n, b in enumerate(slots):
+                rows.append({"b": str(b), "kind": "Cron and system", "count": "3"})
+                if n % 4 == 0:
+                    rows.append({"b": str(b), "kind": "Logins and sudo", "count": "2"})
+                if len(slots) // 2 <= n < len(slots) // 2 + 2:
+                    rows.append({"b": str(b), "kind": "Commands run", "count": str(30 + 10 * (n % 2))})
+                if n == len(slots) // 3:
+                    rows.append({"b": str(b), "kind": "Failed logins", "count": "12"})
+            return rows
         if "soc-heartbeat" in spl:
             # Demo heartbeats: one host that beats every five minutes, with a gap about two hours ago.
             import time
