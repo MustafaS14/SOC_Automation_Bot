@@ -21,7 +21,7 @@ Still to do:
 | More scenarios, each with a write-up and a detection: SSH brute force, persistence through cron or a new user, privilege escalation attempt | A small library beats one demo |
 | Alert noise control: suppress known-benign activity, merge repeated alerts into one incident, raise severity on repetition | False positives are the everyday problem in a SOC; show alert counts before and after |
 | Metrics from the incident store: time to detect and time to respond, shown in a `/stats` command or a dashboard | Managers ask for these numbers |
-| ~~A heartbeat alert: a scheduled search that fires when a host stops sending~~ **Written**: a cron heartbeat on the victim and a Splunk search that fires after 15 silent minutes; still to prove with a real outage ([detections.md](detections.md), section 4) | A stalled Filebeat or Logstash looks the same as a quiet host, and the alert action does not retry, so silent pipeline failures go unnoticed |
+| ~~A heartbeat alert: a scheduled search that fires when a host stops sending~~ **Written**: a cron heartbeat on the victim and a Splunk search that fires after 15 silent minutes; still to prove with a real outage ([detections.md](detections.md), section 4). The console shows it live as a floating pulse widget ([web-console.md](web-console.md)) | A stalled Filebeat or Logstash looks the same as a quiet host, and the alert action does not retry, so silent pipeline failures go unnoticed |
 
 ## Phase 3: automation and reporting
 

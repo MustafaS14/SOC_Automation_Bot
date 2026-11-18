@@ -1,0 +1,23 @@
+{# The heartbeat monitor on every signed-in page: a small pulse pill that opens a panel, which can be made bigger. #}
+{% if user and heartbeat_on and user.tier >= P.READ %}
+<aside id="hb" class="hb" data-state="unknown" aria-label="Heartbeat monitor">
+  <section id="hb-panel" class="hb-panel" hidden aria-labelledby="hb-title">
+    <header class="hb-head">
+      <h2 id="hb-title">Heartbeat</h2>
+      <button type="button" id="hb-size" class="hb-btn" aria-pressed="false">Bigger</button>
+      <button type="button" id="hb-close" class="hb-btn" aria-label="Close the heartbeat panel">Close</button>
+    </header>
+    <p id="hb-summary" class="hb-summary" role="status" aria-live="polite">Checking the heartbeat&hellip;</p>
+    <ul id="hb-hosts" class="hb-hosts"></ul>
+    <p class="muted hb-note">Each tick is a five-minute slot over the last six hours: lit means a heartbeat arrived, dark means it did not. The Splunk alert fires after 15 silent minutes.</p>
+  </section>
+  <button type="button" id="hb-toggle" class="hb-pill" aria-expanded="false" aria-controls="hb-panel">
+    <svg class="hb-ecg" viewBox="0 0 64 24" width="44" height="17" aria-hidden="true" focusable="false">
+      <path class="hb-flat" d="M0 12 H64" pathLength="100"/>
+      <path class="hb-beat" d="M0 12 H18 L22 12 L26 3 L32 21 L37 12 H64" pathLength="100"/>
+    </svg>
+    <span id="hb-label" class="hb-label">Heartbeat</span>
+  </button>
+</aside>
+<script src="{{ url_for('static', filename='heartbeat.js') }}" defer></script>
+{% endif %}

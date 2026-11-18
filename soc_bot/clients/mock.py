@@ -39,6 +39,15 @@ class MockSplunkClient:
 
     async def search(self, spl: str, earliest: str = "-1h", latest: str = "now") -> list[dict[str, str]]:
         await asyncio.sleep(0.4)
+        if "soc-heartbeat" in spl:
+            # Demo heartbeats: one host that beats every five minutes, with a gap about two hours ago.
+            import time
+
+            stamp = int(time.time())
+            current = stamp // 300 * 300
+            slots = [current - i * 300 for i in range(72) if not 22 <= i <= 26]
+            slots = [s for s in slots if s <= stamp - 90]
+            return [{"host": "soc-victim", "last": str(max(slots) + 17), "slots": ",".join(str(s) for s in slots)}]
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         return [
             {"_time": now, "host": "soc-victim", "_raw": "type=EXECVE msg=audit(...): argc=1 a0=\"whoami\""},

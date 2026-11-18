@@ -429,3 +429,53 @@ a.attack:hover { border-color: var(--cream); color: var(--cream); }
 .cov { display: inline-block; padding: 1px 10px; border-radius: 999px; font-size: 0.85em; border: 1px solid var(--slate-2); }
 .cov-tested { color: var(--teal); border-color: var(--teal); }
 .cov-planned { color: var(--orange); border-color: var(--orange); }
+
+/* ---------- heartbeat monitor: a pulse pill bottom-left (the chat button is bottom-right) and a panel that opens above it ---------- */
+.hb, .hb button { text-transform: none; letter-spacing: normal; }
+.hb { position: fixed; left: 20px; bottom: 20px; z-index: 40; --hb: var(--muted); }
+.hb[data-state="ok"] { --hb: var(--teal); }
+.hb[data-state="late"] { --hb: var(--orange); }
+.hb[data-state="silent"] { --hb: var(--red); }
+.hb-pill {
+  display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 8px 16px 8px 12px; cursor: pointer;
+  border-radius: 999px; border: 2px solid var(--hb); background: var(--deep); color: var(--text); font: 600 15px var(--body);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .55);
+}
+.hb-pill:hover { background: var(--panel); }
+.hb-ecg { flex: none; overflow: visible; }
+.hb-ecg path { fill: none; stroke: var(--hb); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.hb-flat { opacity: .45; stroke-dasharray: 3 5; }
+.hb-beat { stroke-dasharray: 100; display: none; }
+.hb[data-state="ok"] .hb-beat, .hb[data-state="late"] .hb-beat { display: block; animation: hb-pulse 2.4s linear infinite; }
+.hb[data-state="late"] .hb-beat { animation-duration: 5s; }
+.hb[data-state="ok"] .hb-flat, .hb[data-state="late"] .hb-flat { display: none; }
+.hb[data-state="silent"] .hb-flat { stroke-dasharray: none; opacity: 1; }
+@keyframes hb-pulse { 0% { stroke-dashoffset: 100; opacity: 1; } 65% { stroke-dashoffset: 0; opacity: 1; } 100% { stroke-dashoffset: 0; opacity: .2; } }
+@media (prefers-reduced-motion: reduce) { .hb-beat { animation: none !important; stroke-dashoffset: 0; } }
+
+.hb-panel {
+  position: absolute; left: 0; bottom: calc(100% + 10px); width: min(calc(100vw - 40px), 360px); padding: 14px 16px 12px;
+  border-radius: 18px; background: linear-gradient(180deg, #1a1b2b 0%, #141521 100%); border: 1px solid rgba(143, 193, 181, .28);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .65);
+}
+.hb-big .hb-panel { width: min(calc(100vw - 40px), 620px); padding: 18px 20px 14px; }
+.hb-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.hb-head h2 { flex: 1; margin: 0; font: 600 16px var(--body); color: var(--text); }
+.hb-btn { min-height: 34px; padding: 4px 12px; border-radius: 10px; border: 1px solid var(--field); background: var(--deep); color: var(--text); font: 600 14px var(--body); cursor: pointer; }
+.hb-btn:hover { background: var(--panel); }
+.hb-summary { margin: 0 0 10px; font-size: 15px; color: var(--text); }
+.hb-hosts { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.hb-host-top { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; font-size: 14px; }
+.hb-host-top b { color: var(--cream); }
+.hb-host.hb-ok .hb-host-top span { color: var(--teal); }
+.hb-host.hb-late .hb-host-top span { color: var(--orange); }
+.hb-host.hb-silent .hb-host-top span { color: var(--red); }
+.hb-ticks { display: flex; gap: 2px; height: 16px; margin: 6px 0 2px; }
+.hb-big .hb-ticks { height: 30px; gap: 3px; }
+.hb-ticks i { flex: 1; border-radius: 2px; background: var(--slate); }
+.hb-ticks i.t1 { background: var(--teal); }
+.hb-ticks i.t2 { background: transparent; box-shadow: inset 0 0 0 1px var(--slate-2); }
+.hb-host.hb-silent .hb-ticks i.t0 { background: #5a2c33; }
+.hb-caption { margin: 0; font-size: 13px; }
+.hb-note { margin: 10px 0 0; font-size: 13px; }
+@media (max-width: 560px) { .hb { left: 12px; bottom: 12px; } .hb-panel { width: calc(100vw - 24px); } }
