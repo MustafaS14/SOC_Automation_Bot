@@ -12,8 +12,12 @@ An attacker who has just got into a machine usually looks around first: who am I
 |---|---|---|---|
 | 1 | Discovery burst: several reconnaissance commands in ten minutes | T1033, T1057, T1082, T1087.001 (T1016 is also in the rule) | **Proven** on 2 November: one row with four kinds of activity; alert saved |
 | 2 | `./splunkd` started from a home directory | T1036.005 (match legitimate name) | **Proven**: found the agent start and the alert fired at 14:05 UTC on 2 November, severity High |
-| 3 | Shell history cleared (`> $HOME/.bash_history && unset HISTFILE`) | T1070.003 | Idea only. The agent runs it at every start, so it is easy to catch |
+| 3 | Shell history cleared or switched off | T1070.003 | Built, not yet proven. The Caldera agent runs it at every start |
 | 4 | Heartbeat: no pipeline heartbeat from a host for 15 minutes | none (health check, not an attack) | Written, not yet proven: needs the cron file on the victim and a real outage test |
+| 5 | New local user account created | T1136.001 | Built, not yet proven |
+| 6 | Risky sudo use: root shell, wrong password or not allowed | T1548.003 | Built, not yet proven |
+| 7 | SSH brute force: many failed logins from one address | T1110 | Built, not yet proven |
+| 8 | Cron job added or changed | T1053.003 | Built, not yet proven: needs the `cron_change` auditd rule on the victim |
 
 ## How commands are read (important)
 
@@ -104,9 +108,22 @@ The `description` column becomes the text of the card, so an analyst sees what h
 
 The definitions of both alerts are stored in [`infra/siem/splunk/savedsearches.conf`](../infra/siem/splunk/savedsearches.conf). To restore them, copy that file to `/opt/splunk/etc/apps/search/local/savedsearches.conf` inside the Splunk container (as the `splunk` user) and restart Splunk. A new alert is private and is first saved under `etc/users/admin/search/local/`; sharing it with the app (*Edit Permissions*) moves it to the app folder. Check with `docker exec -u splunk splunk grep "^\[" /opt/splunk/etc/apps/search/local/savedsearches.conf`.
 
-## Idea: shell history cleared
+## 5 to 8 and the history rule: built, waiting for a real test
 
-Every agent start runs `> $HOME/.bash_history && unset HISTFILE`, which hides what an attacker did (MITRE T1070.003). A rule only needs to decode the command as above and match `bash_history` together with `unset HISTFILE`. Not built yet.
+These five were added together. Each one is a saved search in [`savedsearches.conf`](../infra/siem/splunk/savedsearches.conf) with the same columns as the others (`host`, `severity`, `techniques`, `description`). The Coverage page shows them as *Built, not yet proven*. A technique only becomes *Tested* after the test below has produced a real card in Discord, and the change from built to tested is made in `soc_bot/attack_coverage.py`.
+
+| Rule | What it looks for | Where it reads | Severity | How to test it on the victim |
+|---|---|---|---|---|
+| Shell history cleared or switched off (T1070.003) | A command that unsets `HISTFILE`, sends history to `/dev/null`, empties or removes `.bash_history`, or runs `history -c` through `sh -c` | auditd command records, decoded the same way as detection 1 | Medium | The Caldera agent does it at every start. Or: `sh -c 'unset HISTFILE'` |
+| New local user account created (T1136.001) | `useradd` writing `new user: name=...` to `auth.log` | `auth.log` | High | `sudo useradd soctest`, then `sudo userdel soctest` |
+| Risky sudo use (T1548.003) | `sudo` opening a root shell (`bash`, `sh`, `su`), a wrong sudo password, or a user who is not in sudoers | `auth.log` | Medium | `sudo -i` then `exit`; or `sudo -k` and type a wrong password three times |
+| SSH brute force (T1110) | Five or more `Failed password` lines from one source address in ten minutes | `auth.log`, `sshd` lines | High | From soc-siem: six failed SSH logins to the victim with the wrong password |
+| Cron job added or changed (T1053.003) | A write to `/etc/crontab`, `/etc/cron.*` or `/var/spool/cron/crontabs` by a login session | auditd, key `cron_change` | High | `(crontab -l 2>/dev/null; echo "* * * * * /bin/true") \| crontab -`, then `crontab -r` |
+
+- **The cron rule needs a new auditd rule** on the victim. The lines are in [`infra/auditd/soc.rules`](../infra/auditd/soc.rules): copy the file to `/etc/audit/rules.d/soc.rules`, run `sudo augenrules --load` and check with `sudo auditctl -l | grep cron_change`. The rules cover Debian and Ubuntu paths. Filebeat and Logstash already drop the `PATH` records, so the alert names the program and the login ID, not the file.
+- **Sudo is noisy on purpose**: an administrator who opens `sudo -i` will raise a card. That is the trade-off of watching root shells; the 30-minute throttle per host keeps it to one card.
+- **Brute force limit**: ten-minute windows are fixed, so five failures that straddle a boundary can be missed. Failures from many different addresses are not added up.
+- **New user limit**: it reads `useradd`'s line in `auth.log`. An account created by editing `/etc/passwd` by hand is not seen.
 
 ## Proven end to end
 

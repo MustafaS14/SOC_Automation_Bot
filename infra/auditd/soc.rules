@@ -9,3 +9,14 @@
 ## Trade-off: a command started by a service with no login session is NOT recorded by this rule.
 ## The Caldera agent is started from a login session, so it is still seen (auid=1000, uid=0).
 -a always,exit -F arch=b64 -S execve -F auid>=1000 -F auid!=4294967295 -k exec_cmd
+
+## Cron changes (MITRE T1053.003): log writes to the system cron files and to users' crontabs.
+## Only login sessions (auid>=1000) are recorded, the same filter as above, so the cron daemon itself stays quiet.
+## Debian and Ubuntu paths. The files below must exist or augenrules refuses to load.
+-a always,exit -F arch=b64 -F path=/etc/crontab -F perm=wa -F auid>=1000 -F auid!=4294967295 -k cron_change
+-a always,exit -F arch=b64 -F dir=/etc/cron.d -F perm=wa -F auid>=1000 -F auid!=4294967295 -k cron_change
+-a always,exit -F arch=b64 -F dir=/etc/cron.hourly -F perm=wa -F auid>=1000 -F auid!=4294967295 -k cron_change
+-a always,exit -F arch=b64 -F dir=/etc/cron.daily -F perm=wa -F auid>=1000 -F auid!=4294967295 -k cron_change
+-a always,exit -F arch=b64 -F dir=/etc/cron.weekly -F perm=wa -F auid>=1000 -F auid!=4294967295 -k cron_change
+-a always,exit -F arch=b64 -F dir=/etc/cron.monthly -F perm=wa -F auid>=1000 -F auid!=4294967295 -k cron_change
+-a always,exit -F arch=b64 -F dir=/var/spool/cron/crontabs -F perm=wa -F auid>=1000 -F auid!=4294967295 -k cron_change

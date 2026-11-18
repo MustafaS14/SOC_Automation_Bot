@@ -50,7 +50,7 @@ The assistant's per-tool clearance is shared code with the bot. The page-level t
 
 ## ATT&CK coverage
 
-Each incident carries the MITRE ATT&CK techniques its detection matched, shown as tags on the incident page (a tag opens the incident list filtered to that technique) and in the incident list. The **Coverage** page lists every technique the lab's detections cover, grouped by tactic, with its status: *Tested* (a real Caldera run produced an alert) or *Planned* (a known gap). Next to each technique is the number of recent incidents that carried it. **Download as an ATT&CK Navigator layer** exports the same list for the [Navigator](https://mitre-attack.github.io/attack-navigator/). The data lives in `soc_bot/attack_coverage.py`, and a test fails if a technique marked tested is missing from the saved searches. Any signed-in user at the read tier or above can open the page.
+Each incident carries the MITRE ATT&CK techniques its detection matched, shown as tags on the incident page (a tag opens the incident list filtered to that technique) and in the incident list. The **Coverage** page lists every technique the lab's detections cover, grouped by tactic, with its status: *Tested* (a real test produced an alert), *Built, not yet proven* (the rule is saved but has not fired on a real test) or *Planned* (a known gap). Next to each technique is the number of recent incidents that carried it. **Download as an ATT&CK Navigator layer** exports the same list for the [Navigator](https://mitre-attack.github.io/attack-navigator/). The data lives in `soc_bot/attack_coverage.py`, and a test fails if a technique marked tested is missing from the saved searches. Any signed-in user at the read tier or above can open the page.
 
 ## The Timeline page
 
