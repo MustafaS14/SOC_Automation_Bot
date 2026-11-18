@@ -5,7 +5,7 @@ import re
 import time
 from pathlib import Path
 
-from soc_web.heartbeat import LATE, SILENT, SLOT, SLOTS, HeartbeatProbe, build_hosts
+from soc_web.heartbeat import LATE, SILENT, SLOT, SLOTS, SPL, HeartbeatProbe, build_hosts
 
 from .web_helpers import login, stack  # noqa: F401
 
@@ -17,6 +17,11 @@ def row(host="soc-victim", age=60, slots=None):
     current = int(NOW // SLOT) * SLOT
     have = [current - i * SLOT for i in range(1, 6)] if slots is None else slots
     return {"host": host, "last": str(int(NOW - age)), "slots": ",".join(str(s) for s in have)}
+
+
+def test_the_search_starts_with_the_word_search_that_splunks_rest_interface_requires():
+    assert SPL.startswith("search index=linux ")  # without it Splunk answers 400 and the widget stays on "unknown"
+    assert 'earliest' not in SPL  # the window is passed separately, as for the hunts
 
 
 def test_age_decides_the_state_with_the_same_limits_as_the_alert():
@@ -79,6 +84,7 @@ def test_state_is_unknown_until_splunk_answers_then_ok_none_or_unknown_again(sta
     _, probe = probe_state(backends, FakeSplunk(fail=True))
     snap = probe.snapshot()
     assert snap["state"] == "unknown" and snap["hosts"] == []
+    assert snap["error"] == "ConnectionError"  # the type only, so the panel can say why without leaking a message
     backends.splunk = None
     assert HeartbeatProbe(backends).snapshot()["state"] == "off"
 

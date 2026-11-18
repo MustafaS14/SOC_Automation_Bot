@@ -41,7 +41,9 @@
       case "silent": return worst.host + " has been silent for " + Math.floor(worst.age / 60) + " minutes. Filebeat, Logstash, Splunk or the host may have stopped.";
       case "none": return "No heartbeat in the last six hours. Install the cron file from infra/heartbeat on the host.";
       case "off": return "Splunk is not configured, so there is nothing to watch.";
-      default: return "Waiting for Splunk. The state is unknown, which is not the same as silent.";
+      default:
+        return (data.error ? "Splunk did not answer (" + data.error + "). " : "Waiting for Splunk. ")
+          + "The state is unknown, which is not the same as silent.";
     }
   }
 
