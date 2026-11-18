@@ -54,6 +54,8 @@ from .memory import ConversationMemory
 from .remote import READ_ONLY
 from .runtime import Backends
 from .security import Throttle, add_headers, check_csrf, csrf_token
+from . import timeline
+from .heartbeat import HeartbeatProbe
 from .status import StatusProbe
 from .users import UserStore
 
@@ -205,6 +207,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
     read_only = bool(getattr(store, "remote", False))
     login_throttle = Throttle(limit=20, period=300)
     probe = StatusProbe(backends)
+    heartbeat = HeartbeatProbe(backends)
     memory = ConversationMemory()
     chats = ConversationStore(users)
     recent_results = pagecontext.RecentResults()
@@ -295,7 +298,8 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
         return {"user": g.get("user"), "P": Permission, "mock": backends.settings.mock_mode,
                 "sysstatus": probe.snapshot() if g.get("user") else None,
                 "level_label": LEVEL_LABELS, "ranks": RANKS, "avatar": avatar,
-                "chat_on": backends.assistant is not None, "chat_models": models_on, "read_only": read_only}
+                "chat_on": backends.assistant is not None, "chat_models": models_on, "read_only": read_only,
+                "heartbeat_on": backends.splunk is not None}
 
     @app.template_filter("when")
     def when(dt: Any) -> str:
@@ -524,6 +528,37 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
             flash("This incident has no source IP.", "error")
             return back(incident_id)
         return enrich_response(inc.src_ip, inc.id)
+
+    @app.get("/heartbeat.json")
+    @needs(Permission.READ)
+    def heartbeat_json():
+        # Polled by the widget every few seconds, so it is not written to the audit log; it only reads the last answer.
+        resp = jsonify(heartbeat.snapshot())
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+
+    @app.get("/timeline")
+    @needs(Permission.READ)
+    def timeline_page():
+        """Alerts per time slot by attack type, and Splunk log activity per slot by kind, on one shared time axis."""
+        rng = timeline.parse_range(request.args, datetime.now(timezone.utc))
+        alerts = activity = None
+        notes: dict[str, str] = {}
+        try:
+            alerts = timeline.group_alerts(call(store.timeline(rng.start, rng.end, rng.bucket), timeout=20), rng.slots)
+        except HANDLED as exc:
+            notes["alerts"] = explain(exc)
+        try:
+            if backends.splunk is None:
+                raise NotConfiguredError("Splunk is not configured (SPLUNK_URL / SPLUNK_TOKEN).")
+            rows = call(backends.splunk.search(timeline.activity_spl(rng.bucket), earliest=str(int(rng.start.timestamp())),
+                                               latest=str(int(rng.end.timestamp()))), timeout=45)
+            activity = timeline.parse_activity(rows, rng)
+        except HANDLED as exc:
+            notes["activity"] = explain(exc)
+        audit("timeline.show", "timeline", range=rng.preset or "custom", slots=rng.slots)
+        return render_template("timeline.html", v=timeline.build(rng, alerts, activity), notes=notes,
+                               presets=timeline.PRESETS, tech_url=attack_coverage.technique_url)
 
     @app.get("/coverage")
     @needs(Permission.READ)

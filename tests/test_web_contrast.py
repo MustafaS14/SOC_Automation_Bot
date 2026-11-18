@@ -27,9 +27,11 @@ def ratio(fg, bg):
 TEXT = [("text", "panel"), ("muted", "panel"), ("muted", "deep"), ("muted", "readout"), ("teal", "panel"),
         ("teal", "deep"), ("cream", "panel"), ("red", "panel"), ("orange", "panel"), ("red", "deep"),
         ("cream", "refusal"), ("orange", "refusal"), ("muted", "refusal"), ("text", "denied-row"),
-        ("muted", "denied-row"), ("ink", "teal"), ("ink", "cream")]
+        ("muted", "denied-row"), ("ink", "teal"), ("ink", "cream"), ("orange", "deep"), ("text", "deep")]
 NON_TEXT = [("cream", "panel"), ("cream", "bg"), ("field", "panel"), ("field", "deep"), ("red", "deep"),
             ("teal", "deep"), ("muted", "deep")]
+# The timeline's series colours are marks on a panel: every one must stand out from it (3:1).
+NON_TEXT += [(name, "panel") for name in COLORS if name.startswith("viz-")]
 
 
 @pytest.mark.parametrize("fg, bg", TEXT)
@@ -74,7 +76,7 @@ class _Fields(HTMLParser):
             self.fields.append(a)
 
 
-PAGES = ["/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/audit"]
+PAGES = ["/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/audit", "/timeline"]
 
 
 def test_every_form_field_has_a_label(stack):

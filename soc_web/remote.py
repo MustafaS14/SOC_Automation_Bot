@@ -7,6 +7,7 @@ Short timeouts, one attempt, no retries: when soc-siem is down the caller gets a
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -93,6 +94,17 @@ class RemoteIncidentStore:
         body = await self._get("/api/counts")
         try:
             return {"status": dict(body["status"]), "open_by_severity": dict(body["open_by_severity"])}
+        except (KeyError, TypeError, ValueError) as exc:
+            raise APIError(SERVICE, 502, "The incident API sent an unexpected answer.") from exc
+
+    async def timeline(self, start: datetime, end: datetime, bucket: int) -> dict[str, list[int]]:
+        """Incident counts per time slot and rule, from soc-siem. An older bot without the route gets a clear message."""
+        try:
+            body = await self._get("/api/timeline", start=int(start.timestamp()), end=int(end.timestamp()), bucket=bucket)
+        except NotFoundError as exc:
+            raise APIError(SERVICE, 404, "soc-siem runs an older bot without the timeline route. Update and restart it.") from exc
+        try:
+            return {str(rule): [int(n) for n in counts] for rule, counts in dict(body["series"]).items()}
         except (KeyError, TypeError, ValueError) as exc:
             raise APIError(SERVICE, 502, "The incident API sent an unexpected answer.") from exc
 

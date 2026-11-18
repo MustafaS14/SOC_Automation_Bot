@@ -18,6 +18,7 @@
     <a href="{{ url_for('dashboard') }}" {% if request.endpoint == 'dashboard' %}class="on"{% endif %}>Dashboard</a>
     {% if user.tier >= P.READ %}
     <a href="{{ url_for('incidents') }}" {% if request.endpoint in ('incidents', 'incident') %}class="on"{% endif %}>Incidents</a>
+    <a href="{{ url_for('timeline_page') }}" {% if request.endpoint == 'timeline_page' %}class="on"{% endif %}>Timeline</a>
     <a href="{{ url_for('hunt') }}" {% if request.endpoint == 'hunt' %}class="on"{% endif %}>Hunt</a>
     <a href="{{ url_for('enrich_page') }}" {% if request.endpoint in ('enrich_page', 'enrich_ip') %}class="on"{% endif %}>Enrich</a>
     <a href="{{ url_for('coverage') }}" {% if request.endpoint == 'coverage' %}class="on"{% endif %}>Coverage</a>
@@ -49,6 +50,7 @@
   {% endwith %}
   {% block content %}{% endblock %}
 </main>
+{% include '_heartbeat.html' %}
 {% include '_chat.html' %}
 </body>
 </html>

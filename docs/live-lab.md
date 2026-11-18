@@ -13,7 +13,7 @@ Why a tunnel: the bot's webhook and API listen on the Docker bridge address (`WE
 
 ## 1. On soc-siem: enable the incident API
 
-The API is read-only (`GET /api/incidents`, `/api/incidents/{id}`, `/api/counts`) and shares the webhook's listener.
+The API is read-only (`GET /api/incidents`, `/api/incidents/{id}`, `/api/counts`, `/api/timeline`) and shares the webhook's listener.
 
 1. Add a long random value to the bot's `.env` as `API_SECRET` (at least 32 characters, and different from `WEBHOOK_SECRET`). Generate it without printing it:
    ```

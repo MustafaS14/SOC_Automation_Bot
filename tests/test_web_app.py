@@ -9,7 +9,7 @@ from .web_helpers import PASSWORD, ask, login, post, stack, token  # noqa: F401
 def test_login_required_everywhere(stack):
     app, _, _ = stack
     client = app.test_client()
-    for path in ("/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/audit"):
+    for path in ("/", "/incidents", "/incidents/1", "/hunt", "/enrich", "/audit", "/timeline", "/heartbeat.json"):
         resp = client.get(path)
         assert resp.status_code == 302 and "/login" in resp.headers["Location"], path
 
@@ -365,8 +365,10 @@ def test_no_page_uses_inline_styles_or_scripts(stack):
     client, _ = login(app, "admin")
     for path in ("/", "/incidents", "/incidents/2", "/hunt", "/enrich", "/audit", "/nope"):
         html = client.get(path).get_data(as_text=True)
-        # the one script on a signed-in page is the self-hosted chat widget, loaded by address, never inline
-        assert html.count("<script") == 1 and '<script src="/static/chat.js" defer></script>' in html, path
+        # the only scripts on a signed-in page are the self-hosted heartbeat and chat widgets, loaded by address, never inline
+        assert html.count("<script") == 2, path
+        for name in ("heartbeat", "chat"):
+            assert f'<script src="/static/{name}.js" defer></script>' in html, (path, name)
         assert " style=" not in html and " onclick=" not in html, path
     login_page = app.test_client().get("/login").get_data(as_text=True)
     assert " style=" not in login_page and "<script" not in login_page
