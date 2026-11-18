@@ -70,10 +70,10 @@ def test_activity_rows_land_in_the_right_slot_and_junk_is_ignored():
     r = tl.parse_range({"from": "2026-11-18T10:00", "to": "2026-11-18T11:00"}, NOW)
     first = int(r.start.timestamp())
     rows = [{"b": str(first), "kind": "Commands run", "count": "7"},
-            {"b": str(first + 300), "kind": "Failed logins", "count": "2"},
-            {"b": str(first + 300), "kind": "Failed logins", "count": "3"},
-            {"b": str(first - 300), "kind": "Commands run", "count": "9"},        # before the range
-            {"b": str(first + 3600), "kind": "Commands run", "count": "9"},       # after the range
+            {"b": str(first + r.bucket), "kind": "Failed logins", "count": "2"},
+            {"b": str(first + r.bucket), "kind": "Failed logins", "count": "3"},
+            {"b": str(first - r.bucket), "kind": "Commands run", "count": "9"},        # before the range
+            {"b": str(first + r.bucket * r.slots), "kind": "Commands run", "count": "9"},       # after the range
             {"b": str(first), "kind": "Something else", "count": "4"},            # not a known kind
             {"b": "soon", "kind": "Commands run", "count": "1"}, {"b": str(first), "kind": "Commands run", "count": "-5"}]
     out = tl.parse_activity(rows, r)
