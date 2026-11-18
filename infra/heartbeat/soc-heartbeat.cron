@@ -1,0 +1,6 @@
+# Heartbeat for the SOC lab: one log line every five minutes, so silence means the pipeline is broken.
+# Install on the victim:  sudo cp soc-heartbeat.cron /etc/cron.d/soc-heartbeat && sudo chmod 644 /etc/cron.d/soc-heartbeat
+# The line lands in /var/log/auth.log, which Filebeat already ships, and Splunk's "Heartbeat" alert
+# fires when a host that has sent heartbeats goes quiet for 15 minutes. A host that never sent one is ignored,
+# so install this file before relying on the alert. Check:  grep "soc-heartbeat: alive" /var/log/auth.log | tail -3
+*/5 * * * * root /usr/bin/logger -p auth.info -t soc-heartbeat "alive"
