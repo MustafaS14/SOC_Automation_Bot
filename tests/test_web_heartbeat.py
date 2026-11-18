@@ -137,7 +137,7 @@ def test_widget_is_on_every_page_for_read_tier_and_up_but_not_for_viewers_or_the
     for path in ("/", "/incidents", "/hunt", "/coverage", "/enrich"):
         html = client.get(path).get_data(as_text=True)
         assert 'id="hb"' in html and "heartbeat.js" in html, path
-    assert 'id="hb-size"' in html  # the bigger/smaller switch
+    assert 'id="hb-toggle"' in html and 'id="hb-close"' in html
     viewer, _ = login(app, "viewer")
     assert 'id="hb"' not in viewer.get("/").get_data(as_text=True)
     assert 'id="hb"' not in app.test_client().get("/login").get_data(as_text=True)

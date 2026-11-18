@@ -1,10 +1,9 @@
-{# The heartbeat monitor on every signed-in page: a small pulse pill that opens a panel, which can be made bigger. #}
+{# The heartbeat monitor on every signed-in page: a small pulse pill that opens a panel. #}
 {% if user and heartbeat_on and user.tier >= P.READ %}
 <aside id="hb" class="hb" data-state="unknown" aria-label="Heartbeat monitor">
   <section id="hb-panel" class="hb-panel" hidden aria-labelledby="hb-title">
     <header class="hb-head">
       <h2 id="hb-title">Heartbeat</h2>
-      <button type="button" id="hb-size" class="hb-btn" aria-pressed="false">Bigger</button>
       <button type="button" id="hb-close" class="hb-btn" aria-label="Close the heartbeat panel">Close</button>
     </header>
     <p id="hb-summary" class="hb-summary" role="status" aria-live="polite">Checking the heartbeat&hellip;</p>

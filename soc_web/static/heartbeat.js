@@ -1,21 +1,21 @@
 /* Heartbeat monitor. Reads only this site's /heartbeat.json, and puts every value in with textContent, never as HTML
-   (host names come from Splunk). The only thing remembered here, for this tab, is whether the panel is open and
-   whether it is the bigger size, so changing page does not close it. */
+   (host names come from Splunk). The only thing remembered here, for this tab, is whether the panel is open, so
+   changing page does not close it. */
 (function () {
   "use strict";
   var $ = function (id) { return document.getElementById(id); };
   var root = $("hb"), toggle = $("hb-toggle"), panel = $("hb-panel");
   if (!root || !toggle || !panel) { return; }
 
-  var els = { label: $("hb-label"), summary: $("hb-summary"), hosts: $("hb-hosts"), size: $("hb-size"), close: $("hb-close") };
+  var els = { label: $("hb-label"), summary: $("hb-summary"), hosts: $("hb-hosts"), close: $("hb-close") };
   var UI_KEY = "soc-heartbeat-ui", POLL_MS = 15000;
-  var ui = { open: false, big: false };
+  var ui = { open: false };
   var timer = null;
 
   try {
     var saved = JSON.parse(sessionStorage.getItem(UI_KEY) || "null");
-    if (saved) { ui.open = saved.open === true; ui.big = saved.big === true; }
-  } catch (e) { /* storage may be blocked; the panel then starts closed and small on each page */ }
+    if (saved) { ui.open = saved.open === true; }
+  } catch (e) { /* storage may be blocked; the panel then starts closed on each page */ }
 
   function saveUi() {
     try { sessionStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch (e) { /* see above */ }
@@ -116,16 +116,12 @@
   function apply() {
     panel.hidden = !ui.open;
     toggle.setAttribute("aria-expanded", ui.open ? "true" : "false");
-    root.classList.toggle("hb-big", ui.big);
-    els.size.textContent = ui.big ? "Smaller" : "Bigger";
-    els.size.setAttribute("aria-pressed", ui.big ? "true" : "false");
     render(last);
     saveUi();
   }
 
   toggle.addEventListener("click", function () { ui.open = !ui.open; apply(); if (ui.open) { refresh(); } });
   els.close.addEventListener("click", function () { ui.open = false; apply(); toggle.focus(); });
-  els.size.addEventListener("click", function () { ui.big = !ui.big; apply(); });
   root.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && ui.open) { ui.open = false; apply(); toggle.focus(); }
   });
