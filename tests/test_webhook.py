@@ -212,3 +212,28 @@ async def test_unauthenticated_requests_do_not_consume_the_rate_limit():
         ok = await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers={"X-Webhook-Secret": "s3cret"})
         assert ok.status == 201
     store.shutdown()
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("T1036.004", ["T1036.004"]),
+        ("T1033,T1057, T1082", ["T1033", "T1057", "T1082"]),
+        (["T1033", "T1087.001"], ["T1033", "T1087.001"]),
+        ("T1033\nT1033", ["T1033"]),
+        ("<img src=x onerror=alert(1)>", []),
+        ("T10333", []),
+        ("T1033.1", []),
+        (None, []),
+        (5, []),
+        ({"a": "T1033"}, []),
+    ],
+)
+def test_parse_alert_keeps_only_well_formed_technique_ids(raw, expected):
+    payload = {"search_name": "r", "result": {"techniques": raw}}
+    assert parse_alert(payload)["techniques"] == expected
+
+
+def test_parse_alert_caps_the_number_of_techniques():
+    many = ",".join(f"T{1000 + i}" for i in range(40))
+    assert len(parse_alert({"search_name": "r", "result": {"techniques": many}})["techniques"]) == 12

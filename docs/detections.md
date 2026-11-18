@@ -11,7 +11,7 @@ An attacker who has just got into a machine usually looks around first: who am I
 | # | Name | MITRE ATT&CK | Status |
 |---|---|---|---|
 | 1 | Discovery burst: several reconnaissance commands in ten minutes | T1033, T1057, T1082, T1087.001 (T1016 is also in the rule) | **Proven** on 2 November: one row with four kinds of activity; alert saved |
-| 2 | `./splunkd` started from a home directory | T1036.004 (masquerading) | **Proven**: found the agent start and the alert fired at 14:05 UTC on 2 November, severity High |
+| 2 | `./splunkd` started from a home directory | T1036.005 (match legitimate name) | **Proven**: found the agent start and the alert fired at 14:05 UTC on 2 November, severity High |
 | 3 | Shell history cleared (`> $HOME/.bash_history && unset HISTFILE`) | T1070.003 | Idea only. The agent runs it at every start, so it is easy to catch |
 
 ## How commands are read (important)
@@ -34,10 +34,11 @@ index=linux sourcetype=linux:audit type=EXECVE
 | eval technique=case(match(cmd,"^(whoami|id)(\s|$)"),"T1033 who am I", match(cmd,"(/etc/passwd|^getent\s+passwd)"),"T1087.001 account list", match(cmd,"^ps(\s|$)"),"T1057 process list", match(cmd,"^(uname|hostname)(\s|$)"),"T1082 system info", match(cmd,"^(ifconfig|netstat|ss|ip)(\s|$)"),"T1016 network config")
 | where isnotnull(technique)
 | bin _time span=10m
-| stats dc(technique) AS techniques values(technique) AS what values(cmd) AS commands BY host _time
-| where techniques>=3
+| stats dc(technique) AS kinds values(technique) AS what values(cmd) AS commands BY host _time
+| where kinds>=3
 | eval severity="Medium"
-| eval description="Reconnaissance burst: ".techniques." different techniques in ten minutes (".mvjoin(what,", ")."). Commands: ".mvjoin(commands,"; ")
+| eval techniques=mvjoin(mvmap(what, replace(what," .*","")), ",")
+| eval description="Reconnaissance burst: ".kinds." different techniques in ten minutes (".mvjoin(what,", ")."). Commands: ".mvjoin(commands,"; ")
 ```
 
 - **What it does:** each command is sorted into a kind of activity (who am I, account list, process list, system info, network config). It fires when one host shows **three or more different kinds** inside ten minutes. It counts kinds, not commands, so two `ps` commands count once.
@@ -52,13 +53,18 @@ index=linux sourcetype=linux:audit type=EXECVE a0="./splunkd"
 | rex field=a2 "https?://(?<src_ip>\d+\.\d+\.\d+\.\d+)"
 | eval severity="High"
 | eval cmd=trim(a0." ".coalesce(a1,"")." ".coalesce(a2,"")." ".coalesce(a3,"")." ".coalesce(a4,"")." ".coalesce(a5,""))
-| eval description="T1036 Masquerading: a process named splunkd was started from the current directory. Command: ".cmd
-| table _time host src_ip severity description a0 a1 a2
+| eval techniques="T1036.005"
+| eval description="T1036.005 Masquerading: a process named splunkd was started from the current directory. Command: ".cmd
+| table _time host src_ip severity techniques description a0 a1 a2
 ```
 
 - **Fires when** any process named `./splunkd` is started. The real Splunk is never started like this.
 - **Result:** one row, `soc-victim`, `192.168.56.30` (the attacker), `High`. The columns `host`, `src_ip`, `severity` and `description` are what the bot's webhook reads, together with the alert's name. The `description` holds the full command line.
 - **Fired for real:** on 2 November the alert triggered at 14:05 UTC after a new agent was started. The next run found the same event and was held back by the throttle, as intended.
+
+## How techniques reach the incident
+
+Each search ends with a `techniques` column holding the ATT&CK IDs it matched, for example `T1036.005` or `T1033,T1057,T1082`. The alert action already forwards the whole result row, so nothing in the Splunk app changes. The bot's webhook keeps only values shaped like `T1234` or `T1234.567` (anything else is dropped, so free text cannot reach a card or a page), stores them with the incident and shows them on the Discord card, on the incident page and in the read-only API (`/api/incidents?technique=T1036` filters, and a parent ID also matches its sub-techniques). The console's **Coverage** page lists what is covered and what is still a gap, and offers the list as an ATT&CK Navigator layer. The list lives in [`soc_bot/attack_coverage.py`](../soc_bot/attack_coverage.py), and a test checks that every technique marked tested really appears in a saved search.
 
 ## What the Discord card shows
 

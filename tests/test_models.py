@@ -74,3 +74,20 @@ def test_incident_from_row_parses_timestamps_and_nulls():
     incident = Incident.from_row(row)
     assert incident.created.year == 2026 and incident.updated is None
     assert incident.description == "" and incident.comments == []
+
+
+def test_parse_techniques_accepts_text_and_lists_and_drops_junk():
+    from soc_bot.models import parse_techniques
+
+    assert parse_techniques("T1033, t1057;T1033 nonsense T12") == ["T1033", "T1057"]
+    assert parse_techniques(["T1036.004", "<b>", 3]) == ["T1036.004"]
+    assert parse_techniques(None) == [] and parse_techniques(7) == []
+
+
+def test_incident_from_a_row_without_the_techniques_column_has_no_techniques():
+    from soc_bot.models import Incident
+
+    row = {"id": 1, "rule": "r", "severity": "Low", "status": "New", "host": None, "src_ip": None, "assignee": None,
+           "description": "", "url": None, "classification": None, "created": None, "updated": None}
+    assert Incident.from_row(row).techniques == []
+    assert Incident.from_row({**row, "techniques": "T1033,T1057"}).techniques == ["T1033", "T1057"]

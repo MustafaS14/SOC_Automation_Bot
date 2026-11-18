@@ -419,3 +419,13 @@ ul.examples a:hover, ul.examples a:focus-visible { border-color: var(--teal); co
 /* no scrollbars inside the chat: it still scrolls with the wheel, touch and keyboard */
 .chat-log, .chat-side, #chat-form textarea { scrollbar-width: none; -ms-overflow-style: none; }
 .chat-log::-webkit-scrollbar, .chat-side::-webkit-scrollbar, #chat-form textarea::-webkit-scrollbar { display: none; }
+
+/* MITRE ATT&CK technique tags on an incident */
+a.attack { display: inline-block; padding: 1px 10px; margin: 0 6px 4px 0; border: 1px solid var(--slate-2); border-radius: 999px;
+  font-size: 0.9em; text-decoration: none; color: var(--teal); }
+a.attack:hover { border-color: var(--cream); color: var(--cream); }
+
+/* Coverage page status badges */
+.cov { display: inline-block; padding: 1px 10px; border-radius: 999px; font-size: 0.85em; border: 1px solid var(--slate-2); }
+.cov-tested { color: var(--teal); border-color: var(--teal); }
+.cov-planned { color: var(--orange); border-color: var(--orange); }

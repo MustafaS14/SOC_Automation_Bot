@@ -10,6 +10,7 @@
     <dt>Status</dt><dd>{{ incident.status }}{% if incident.classification %} ({{ classes.get(incident.classification, incident.classification) }}){% endif %}</dd>
     <dt>Host</dt><dd>{{ incident.host or '-' }}</dd>
     <dt>Source IP</dt><dd>{{ incident.src_ip or '-' }}</dd>
+    <dt>ATT&amp;CK</dt><dd>{% for t in incident.techniques %}<a class="attack" href="{{ url_for('incidents', status='all', technique=t) }}">{{ t }}</a> {% else %}-{% endfor %}</dd>
     <dt>Assignee</dt><dd>{{ incident.assignee or '-' }}</dd>
     <dt>Created</dt><dd>{{ incident.created|when }}</dd>
     <dt>Updated</dt><dd>{{ incident.updated|when }}</dd>

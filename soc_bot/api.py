@@ -17,7 +17,7 @@ from aiohttp import web
 
 from .audit import redact
 from .clients.base import NotFoundError
-from .models import Comment, Incident
+from .models import TECHNIQUE_RE, Comment, Incident
 from .store import SEVERITIES, IncidentStore
 from .store.incidents import _STATUS_SQL, ORDERS
 from .webhook import RateLimiter
@@ -48,6 +48,7 @@ def incident_json(inc: Incident, *, comments: bool = False) -> dict[str, Any]:
         "host": _clean(inc.host), "src_ip": inc.src_ip, "assignee": _clean(inc.assignee),
         "description": redact(inc.description), "url": inc.url, "classification": inc.classification,
         "created": _iso(inc.created), "updated": _iso(inc.updated),
+        "techniques": list(inc.techniques),
     }
     if comments:
         data["comments"] = [comment_json(c) for c in inc.comments]
@@ -97,11 +98,14 @@ def register(
             return _error(400, "severity must be one of: " + ", ".join(SEVERITIES))
         if order not in ORDERS:
             return _error(400, "order must be one of: " + ", ".join(ORDERS))
+        technique = q.get("technique") or None
+        if technique is not None and not TECHNIQUE_RE.match(technique):
+            return _error(400, "technique must look like T1036 or T1036.004")
         try:
             limit = int(q.get("limit", "10"))
         except ValueError:
             return _error(400, "limit must be a whole number")
-        rows = await store.list(status, severity, max(1, min(limit, MAX_LIMIT)), order)
+        rows = await store.list(status, severity, max(1, min(limit, MAX_LIMIT)), order, technique=technique)
         return web.json_response({"incidents": [incident_json(i) for i in rows]})
 
     async def counts(request: web.Request) -> web.Response:
