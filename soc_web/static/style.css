@@ -428,6 +428,7 @@ a.attack:hover { border-color: var(--cream); color: var(--cream); }
 /* Coverage page status badges */
 .cov { display: inline-block; padding: 1px 10px; border-radius: 999px; font-size: 0.85em; border: 1px solid var(--slate-2); }
 .cov-tested { color: var(--teal); border-color: var(--teal); }
+.cov-built { color: var(--cream); border-color: var(--cream); }
 .cov-planned { color: var(--orange); border-color: var(--orange); }
 
 /* ---------- heartbeat monitor: a pulse pill bottom-left (the chat button is bottom-right) and a panel that opens above it ---------- */

@@ -1,7 +1,8 @@
 """What the lab's detections cover in MITRE ATT&CK, in one place.
 
 The console's coverage page and the ATT&CK Navigator export both read this list. Keep it honest: "tested" means a
-real Caldera run produced an alert, "planned" is a gap we know about and have not built yet.
+real Caldera run produced an alert, "built" means the rule is written and saved but has not yet fired on a real
+test, "planned" is a gap we know about and have not built yet.
 """
 
 from __future__ import annotations
@@ -10,16 +11,22 @@ from dataclasses import dataclass
 from typing import Any
 
 TESTED = "tested"
+BUILT = "built"
 PLANNED = "planned"
-STATUSES = (TESTED, PLANNED)
-STATUS_LABELS = {TESTED: "Tested", PLANNED: "Planned"}
-STATUS_COLORS = {TESTED: "#8fc1b5", PLANNED: "#ff8a00"}
+STATUSES = (TESTED, BUILT, PLANNED)
+STATUS_LABELS = {TESTED: "Tested", BUILT: "Built, not yet proven", PLANNED: "Planned"}
+STATUS_COLORS = {TESTED: "#8fc1b5", BUILT: "#e2c75f", PLANNED: "#ff8a00"}
 
 # Order the tactics the way ATT&CK lists them.
 TACTICS = ("Persistence", "Privilege Escalation", "Defense Evasion", "Credential Access", "Discovery")
 
 RULE_MASQUERADE = "Masquerading process: ./splunkd from home directory"
 RULE_DISCOVERY = "Discovery burst: several reconnaissance commands in ten minutes"
+RULE_HISTORY = "Shell history cleared or switched off"
+RULE_USER = "New local user account created"
+RULE_SUDO = "Risky sudo use: root shell, wrong password or not allowed"
+RULE_BRUTE = "SSH brute force: many failed logins from one address"
+RULE_CRON = "Cron job added or changed"
 
 
 @dataclass(frozen=True)
@@ -35,8 +42,8 @@ class Technique:
 TECHNIQUES: tuple[Technique, ...] = (
     Technique("T1036.005", "Match Legitimate Resource Name or Location", "Defense Evasion", TESTED,
               (RULE_MASQUERADE,), "A Caldera agent named splunkd, started from a home directory."),
-    Technique("T1070.003", "Clear Command History", "Defense Evasion", PLANNED, (),
-              "The agent clears shell history at every start; the rule is sketched in docs/detections.md."),
+    Technique("T1070.003", "Clear Command History", "Defense Evasion", BUILT, (RULE_HISTORY,),
+              "The Caldera agent clears shell history at every start."),
     Technique("T1033", "System Owner/User Discovery", "Discovery", TESTED, (RULE_DISCOVERY,), "whoami, id"),
     Technique("T1057", "Process Discovery", "Discovery", TESTED, (RULE_DISCOVERY,), "ps"),
     Technique("T1082", "System Information Discovery", "Discovery", TESTED, (RULE_DISCOVERY,), "uname, hostname"),
@@ -44,11 +51,14 @@ TECHNIQUES: tuple[Technique, ...] = (
               "Reading /etc/passwd"),
     Technique("T1016", "System Network Configuration Discovery", "Discovery", TESTED, (RULE_DISCOVERY,),
               "ip, ifconfig, netstat, ss"),
-    Technique("T1110", "Brute Force", "Credential Access", PLANNED, (), "Many failed SSH logins from one address."),
-    Technique("T1053.003", "Scheduled Task/Job: Cron", "Persistence", PLANNED, (), "A new cron entry."),
-    Technique("T1136.001", "Create Account: Local Account", "Persistence", PLANNED, (), "A new local user."),
+    Technique("T1110", "Brute Force", "Credential Access", BUILT, (RULE_BRUTE,),
+              "Five or more failed SSH logins from one address in ten minutes."),
+    Technique("T1053.003", "Scheduled Task/Job: Cron", "Persistence", BUILT, (RULE_CRON,),
+              "A write to a cron file (needs the cron_change auditd rule on the victim)."),
+    Technique("T1136.001", "Create Account: Local Account", "Persistence", BUILT, (RULE_USER,),
+              "A new local user made with useradd."),
     Technique("T1548.003", "Abuse Elevation Control Mechanism: Sudo and Sudo Caching", "Privilege Escalation",
-              PLANNED, (), "Unexpected sudo use."),
+              BUILT, (RULE_SUDO,), "A root shell through sudo, a wrong sudo password, or a user who may not use sudo."),
 )
 
 
@@ -57,7 +67,7 @@ def by_tactic() -> list[tuple[str, list[Technique]]]:
     groups = []
     for tactic in TACTICS:
         rows = [t for t in TECHNIQUES if t.tactic == tactic]
-        rows.sort(key=lambda t: (t.status != TESTED, t.id))
+        rows.sort(key=lambda t: (STATUSES.index(t.status), t.id))
         if rows:
             groups.append((tactic, rows))
     return groups
@@ -77,7 +87,7 @@ def navigator_layer() -> dict[str, Any]:
         "name": "SOC lab detection coverage",
         "versions": {"attack": "18", "navigator": "5.1.0", "layer": "4.5"},
         "domain": "enterprise-attack",
-        "description": "Techniques the SOC lab's Splunk detections cover (tested) or still lack (planned).",
+        "description": "Techniques the SOC lab's Splunk detections cover (tested or built) or still lack (planned).",
         "techniques": [
             {
                 "techniqueID": t.id,

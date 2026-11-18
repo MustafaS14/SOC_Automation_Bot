@@ -4,8 +4,9 @@
 <h1>ATT&amp;CK coverage</h1>
 <div class="panel">
   <p>What the lab's detections cover in <a href="https://attack.mitre.org/" rel="noopener noreferrer">MITRE ATT&amp;CK</a>.
-  <strong>Tested</strong> means a real Caldera run produced an alert. <strong>Planned</strong> is a gap we know about
-  and have not built. {{ totals.tested }} tested, {{ totals.planned }} planned.</p>
+  <strong>Tested</strong> means a real Caldera run produced an alert. <strong>Built, not yet proven</strong> means the
+  rule is written and saved but has not fired on a real test yet. <strong>Planned</strong> is a gap we know about
+  and have not built. {{ totals.tested }} tested, {{ totals.built }} built, {{ totals.planned }} planned.</p>
   <p><a href="{{ url_for('coverage_navigator') }}">Download as an ATT&amp;CK Navigator layer</a> (open it on the
   <a href="https://mitre-attack.github.io/attack-navigator/" rel="noopener noreferrer">Navigator</a> with Open Existing Layer, Upload from local).</p>
   {% if seen is none %}<p class="muted">Incident counts are unavailable right now because soc-siem did not answer.</p>{% endif %}
