@@ -48,6 +48,10 @@ The assistant's per-tool clearance is shared code with the bot. The page-level t
 
 **The mock assistant is scripted.** With `AI_BACKEND=mock` the assistant only matches keywords, and follow-ups like "explain that" get a fixed, labelled re-wording of the earlier answer ("scripted mock explanation, not a language model"). Real explanations need `AI_BACKEND=claude_code`.
 
+## ATT&CK coverage
+
+Each incident carries the MITRE ATT&CK techniques its detection matched, shown as tags on the incident page (a tag opens the incident list filtered to that technique) and in the incident list. The **Coverage** page lists every technique the lab's detections cover, grouped by tactic, with its status: *Tested* (a real Caldera run produced an alert) or *Planned* (a known gap). Next to each technique is the number of recent incidents that carried it. **Download as an ATT&CK Navigator layer** exports the same list for the [Navigator](https://mitre-attack.github.io/attack-navigator/). The data lives in `soc_bot/attack_coverage.py`, and a test fails if a technique marked tested is missing from the saved searches. Any signed-in user at the read tier or above can open the page.
+
 ## The chat button
 
 Every signed-in page has a round button at the bottom right (not the sign-in page). It opens a slide-over chat with a list of your past conversations on the left; Escape or Close shuts it. There is no separate Ask page: the chat button is the only way to ask, and it needs JavaScript.

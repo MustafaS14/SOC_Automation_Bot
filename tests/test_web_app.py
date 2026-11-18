@@ -599,3 +599,28 @@ def test_empty_incident_list_explains_what_to_do(stack):
     assert "No open incidents. New ones appear here when Splunk sends an alert to the bot." in html
     filtered = client.get("/incidents?status=closed&severity=High").get_data(as_text=True)
     assert "No incidents match these filters" in filtered and "Clear the filters" in filtered
+
+
+def test_coverage_page_lists_techniques_with_links_and_needs_the_read_tier(stack):
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    page = client.get("/coverage")
+    html = page.get_data(as_text=True)
+    assert page.status_code == 200
+    assert "T1036.005" in html and "https://attack.mitre.org/techniques/T1036/005/" in html
+    assert "Tested" in html and "Planned" in html
+    viewer, _ = login(app, "viewer")
+    assert viewer.get("/coverage").status_code == 403
+    assert viewer.get("/coverage/navigator.json").status_code == 403
+
+
+def test_coverage_navigator_download_is_a_json_attachment(stack):
+    import json
+
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    resp = client.get("/coverage/navigator.json")
+    assert resp.status_code == 200 and resp.mimetype == "application/json"
+    assert "attachment" in resp.headers["Content-Disposition"]
+    layer = json.loads(resp.get_data(as_text=True))
+    assert layer["domain"] == "enterprise-attack" and layer["techniques"]

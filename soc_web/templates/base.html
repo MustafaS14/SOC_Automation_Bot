@@ -20,6 +20,7 @@
     <a href="{{ url_for('incidents') }}" {% if request.endpoint in ('incidents', 'incident') %}class="on"{% endif %}>Incidents</a>
     <a href="{{ url_for('hunt') }}" {% if request.endpoint == 'hunt' %}class="on"{% endif %}>Hunt</a>
     <a href="{{ url_for('enrich_page') }}" {% if request.endpoint in ('enrich_page', 'enrich_ip') %}class="on"{% endif %}>Enrich</a>
+    <a href="{{ url_for('coverage') }}" {% if request.endpoint == 'coverage' %}class="on"{% endif %}>Coverage</a>
     {% endif %}
     {% if user.tier >= P.ADMIN %}<a href="{{ url_for('audit_view') }}" {% if request.endpoint == 'audit_view' %}class="on"{% endif %}>Audit</a>{% endif %}
   </nav>

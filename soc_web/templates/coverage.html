@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}ATT&amp;CK coverage - SOC Console{% endblock %}
+{% block content %}
+<h1>ATT&amp;CK coverage</h1>
+<div class="panel">
+  <p>What the lab's detections cover in <a href="https://attack.mitre.org/" rel="noopener noreferrer">MITRE ATT&amp;CK</a>.
+  <strong>Tested</strong> means a real Caldera run produced an alert. <strong>Planned</strong> is a gap we know about
+  and have not built. {{ totals.tested }} tested, {{ totals.planned }} planned.</p>
+  <p><a href="{{ url_for('coverage_navigator') }}">Download as an ATT&amp;CK Navigator layer</a> (open it on the
+  <a href="https://mitre-attack.github.io/attack-navigator/" rel="noopener noreferrer">Navigator</a> with Open Existing Layer, Upload from local).</p>
+  {% if seen is none %}<p class="muted">Incident counts are unavailable right now because soc-siem did not answer.</p>{% endif %}
+</div>
+{% for tactic, rows in groups %}
+<div class="panel">
+  <h2>{{ tactic }}</h2>
+  <table>
+    <thead><tr><th>Technique</th><th>Name</th><th>Status</th><th>Detection</th>{% if seen is not none %}<th>Incidents</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for t in rows %}
+      <tr>
+        <td><a class="attack" href="{{ url(t.id) }}" rel="noopener noreferrer">{{ t.id }}</a></td>
+        <td>{{ t.name }}{% if t.note %}<div class="muted">{{ t.note }}</div>{% endif %}</td>
+        <td><span class="cov cov-{{ t.status }}">{{ labels[t.status] }}</span></td>
+        <td>{% for r in t.rules %}{{ r }}{% if not loop.last %}<br>{% endif %}{% else %}<span class="muted">none yet</span>{% endfor %}</td>
+        {% if seen is not none %}<td>{% if seen.get(t.id) %}<a href="{{ url_for('incidents', status='all', technique=t.id) }}">{{ seen[t.id] }}</a>{% else %}0{% endif %}</td>{% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endfor %}
+<p class="muted">Incident counts cover the latest 50 incidents.</p>
+{% endblock %}

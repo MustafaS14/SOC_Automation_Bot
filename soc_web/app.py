@@ -6,6 +6,7 @@ the same audit entries (with channel "web"). Data from alerts and from Splunk is
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import threading
@@ -27,10 +28,11 @@ from flask import (
     session,
     url_for,
 )
+from flask import Response
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from soc_bot import hunts
+from soc_bot import attack_coverage, hunts
 from soc_bot.ai import split_plain_words
 from soc_bot.ai.assistant import MAX_QUESTION_CHARS
 from soc_bot.ai.backends import CHAT_MODELS
@@ -522,6 +524,29 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
             flash("This incident has no source IP.", "error")
             return back(incident_id)
         return enrich_response(inc.src_ip, inc.id)
+
+    @app.get("/coverage")
+    @needs(Permission.READ)
+    def coverage():
+        # How often each technique shows up in the newest incidents. The page still works when soc-siem is down.
+        seen: dict[str, int] | None = {}
+        try:
+            for inc in call(store.list("all", None, 50)):
+                for tag in inc.techniques:
+                    seen[tag] = seen.get(tag, 0) + 1
+        except HANDLED:
+            seen = None
+        audit("coverage.show", "coverage")
+        return render_template("coverage.html", groups=attack_coverage.by_tactic(), totals=attack_coverage.counts(),
+                               labels=attack_coverage.STATUS_LABELS, url=attack_coverage.technique_url, seen=seen)
+
+    @app.get("/coverage/navigator.json")
+    @needs(Permission.READ)
+    def coverage_navigator():
+        audit("coverage.export", "navigator layer")
+        body = json.dumps(attack_coverage.navigator_layer(), indent=2)
+        return Response(body, mimetype="application/json",
+                        headers={"Content-Disposition": 'attachment; filename="soc-lab-coverage-layer.json"'})
 
     @app.route("/hunt", methods=["GET", "POST"])
     @needs(Permission.READ)

@@ -16,7 +16,7 @@ Still to do:
 
 | Idea | Why it matters |
 |---|---|
-| Tag each detection with its MITRE ATT&CK technique and keep a coverage table (what Caldera can run versus what is detected) | Real teams track detection coverage; it also shows the gaps |
+| ~~Tag each detection with its MITRE ATT&CK technique and keep a coverage table~~ **Done**: techniques travel with each incident, and the console has a Coverage page with a Navigator export. Next: more detections to close the planned gaps | Real teams track detection coverage; it also shows the gaps |
 | A detection test script: run a Caldera operation, wait, and check the expected alert reached the bot | Proves each rule works ("detection as code") |
 | More scenarios, each with a write-up and a detection: SSH brute force, persistence through cron or a new user, privilege escalation attempt | A small library beats one demo |
 | Alert noise control: suppress known-benign activity, merge repeated alerts into one incident, raise severity on repetition | False positives are the everyday problem in a SOC; show alert counts before and after |
