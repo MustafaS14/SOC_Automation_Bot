@@ -42,8 +42,8 @@ class Technique:
 TECHNIQUES: tuple[Technique, ...] = (
     Technique("T1036.005", "Match Legitimate Resource Name or Location", "Defense Evasion", TESTED,
               (RULE_MASQUERADE,), "A Caldera agent named splunkd, started from a home directory."),
-    Technique("T1070.003", "Clear Command History", "Defense Evasion", BUILT, (RULE_HISTORY,),
-              "The Caldera agent clears shell history at every start."),
+    Technique("T1070.003", "Clear Command History", "Defense Evasion", TESTED, (RULE_HISTORY,),
+              "Run by Caldera: switches shell history off (card #49 on 19 November)."),
     Technique("T1033", "System Owner/User Discovery", "Discovery", TESTED, (RULE_DISCOVERY,), "whoami, id"),
     Technique("T1057", "Process Discovery", "Discovery", TESTED, (RULE_DISCOVERY,), "ps"),
     Technique("T1082", "System Information Discovery", "Discovery", TESTED, (RULE_DISCOVERY,), "uname, hostname"),
@@ -51,14 +51,14 @@ TECHNIQUES: tuple[Technique, ...] = (
               "Reading /etc/passwd"),
     Technique("T1016", "System Network Configuration Discovery", "Discovery", TESTED, (RULE_DISCOVERY,),
               "ip, ifconfig, netstat, ss"),
-    Technique("T1110", "Brute Force", "Credential Access", BUILT, (RULE_BRUTE,),
-              "Five or more failed SSH logins from one address in ten minutes."),
-    Technique("T1053.003", "Scheduled Task/Job: Cron", "Persistence", BUILT, (RULE_CRON,),
-              "A write to a cron file (needs the cron_change auditd rule on the victim)."),
-    Technique("T1136.001", "Create Account: Local Account", "Persistence", BUILT, (RULE_USER,),
-              "A new local user made with useradd."),
+    Technique("T1110", "Brute Force", "Credential Access", TESTED, (RULE_BRUTE,),
+              "Run by Caldera: six wrong SSH passwords (cards #71 and #77)."),
+    Technique("T1053.003", "Scheduled Task/Job: Cron", "Persistence", TESTED, (RULE_CRON,),
+              "Run by Caldera: a cron entry added and removed (cards #70 and #74); needs the cron_change auditd rule on the victim."),
+    Technique("T1136.001", "Create Account: Local Account", "Persistence", TESTED, (RULE_USER,),
+              "Run by Caldera: useradd of a test account (cards #52 and #58)."),
     Technique("T1548.003", "Abuse Elevation Control Mechanism: Sudo and Sudo Caching", "Privilege Escalation",
-              BUILT, (RULE_SUDO,), "A root shell through sudo, a wrong sudo password, or a user who may not use sudo."),
+              TESTED, (RULE_SUDO,), "Run by Caldera: a root shell through sudo (cards #53 and #56)."),
 )
 
 

@@ -63,7 +63,7 @@ def test_rules_fold_into_a_few_known_attack_types_and_unknown_ones_are_other():
 def test_every_tested_attack_type_lists_its_attck_techniques():
     assert "T1036.005" in tl.techniques_for(tl.ATTACKS[1])
     assert {"T1033", "T1057", "T1082", "T1087.001", "T1016"} <= set(tl.techniques_for(tl.ATTACKS[0]))
-    assert tl.techniques_for(tl.ATTACKS[3]) == []
+    assert {"T1070.003", "T1136.001", "T1548.003", "T1110", "T1053.003"} <= set(tl.techniques_for(tl.ATTACKS[3]))
 
 
 def test_activity_rows_land_in_the_right_slot_and_junk_is_ignored():

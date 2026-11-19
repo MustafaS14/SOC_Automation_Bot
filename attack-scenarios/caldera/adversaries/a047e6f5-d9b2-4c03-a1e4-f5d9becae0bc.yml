@@ -1,5 +1,5 @@
-name: SOC full coverage
-description: One of each attack the SOC lab detects (recon, history off, cron, new user, sudo, SSH brute force).
+name: 'SOC full coverage'
+description: 'One of each attack the SOC lab detects (recon, history off, cron, new user, sudo, SSH brute force).'
 atomic_ordering:
 - f4cbdb04-b13c-446a-b6e1-19bb25a557aa
 - df73271c-9fc8-462e-b7a3-c8eaddd925a7

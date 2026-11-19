@@ -1,9 +1,9 @@
 - id: a9baf7ba-5f86-4c2f-8ea6-c20965ec201e
-  name: SOC SSH brute force
-  description: Six wrong SSH passwords against this host, as six invented users.
+  name: 'SOC SSH brute force'
+  description: 'Six wrong SSH passwords against this host, as six invented users.'
   tactic: credential-access
   technique_id: T1110
-  technique_name: Brute Force
+  technique_name: 'Brute Force'
   requirements: []
   executors:
   - name: sh
@@ -13,6 +13,4 @@
     payloads: []
     parsers: []
     command: |
-      printf '#!/bin/sh\necho wrong\n' > /tmp/soc-askpass.sh; chmod +x /tmp/soc-askpass.sh
-      for i in 1 2 3 4 5 6; do SSH_ASKPASS=/tmp/soc-askpass.sh SSH_ASKPASS_REQUIRE=force timeout 10 ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null fakeuser$i@127.0.0.1 true < /dev/null; done
-      rm -f /tmp/soc-askpass.sh
+      for i in 1 2 3 4 5 6; do sh -c "printf '#!/bin/sh\necho wrong\n' > /tmp/askpass$i.sh; chmod +x /tmp/askpass$i.sh; SSH_ASKPASS=/tmp/askpass$i.sh SSH_ASKPASS_REQUIRE=force timeout 10 ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null fakeuser$i@127.0.0.1 true < /dev/null"; done; rm -f /tmp/askpass[1-6].sh; exit 0

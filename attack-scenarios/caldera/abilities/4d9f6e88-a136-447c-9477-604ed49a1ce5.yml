@@ -1,9 +1,9 @@
 - id: 4d9f6e88-a136-447c-9477-604ed49a1ce5
-  name: SOC sudo root shell
-  description: Opens and closes a root shell through sudo.
+  name: 'SOC sudo root shell'
+  description: 'Opens and closes a root shell through sudo.'
   tactic: privilege-escalation
   technique_id: T1548.003
-  technique_name: Abuse Elevation Control Mechanism: Sudo and Sudo Caching
+  technique_name: 'Abuse Elevation Control Mechanism: Sudo and Sudo Caching'
   requirements: []
   executors:
   - name: sh

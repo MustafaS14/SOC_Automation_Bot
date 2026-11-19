@@ -35,4 +35,4 @@ Then restart Caldera so it reads the new files: `tmux attach -t caldera`, Ctrl+C
 
 - **Brute force source:** the failed logins come from the victim to itself, so the card shows `127.0.0.1` as the source address. That tests the rule. A realistic source address needs a second agent on `soc-attacker`.
 - **Throttle:** each alert is quiet for the throttle period per host after it fires. Wait for it to pass (5 minutes with `install_alerts.sh 5m`) before running the whole operation again.
-- **Tested status:** a technique moves from *Built* to *Tested* on the Coverage page after you have seen its card appear from a run like this one.
+- **Tested status:** a technique moves from *Built* to *Tested* on the Coverage page after you have seen its card appear from a real run.
