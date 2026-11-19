@@ -16,8 +16,8 @@ An attacker who has just got into a machine usually looks around first: who am I
 | 4 | Heartbeat: no pipeline heartbeat from a host for 15 minutes | none (health check, not an attack) | Written, not yet proven: needs the cron file on the victim and a real outage test |
 | 5 | New local user account created | T1136.001 | **Proven** by Caldera on 19 November: cards #52 and #58 |
 | 6 | Risky sudo use: root shell, wrong password or not allowed | T1548.003 | **Proven** by Caldera on 19 November: cards #53 and #56 |
-| 7 | SSH brute force: many failed logins from one address | T1110 | **Proven** on 19 November (card #60) with a hand-run loop of six wrong passwords; the Caldera step needs a re-run |
-| 8 | Cron job added or changed | T1053.003 | **Proven** on 19 November (card #59) with a hand-run test; needs the `cron_change` auditd rule on the victim. The Caldera step needs a re-run now that the rule is loaded |
+| 7 | SSH brute force: many failed logins from one address | T1110 | **Proven** by Caldera on 19 November: cards #71 and #77 (card #60 came earlier from a hand-run loop) |
+| 8 | Cron job added or changed | T1053.003 | **Proven** by Caldera on 19 November: cards #70 and #74. Needs the `cron_change` auditd rule on the victim |
 
 ## How commands are read (important)
 
@@ -110,7 +110,7 @@ The definitions of both alerts are stored in [`infra/siem/splunk/savedsearches.c
 
 ## 5 to 8 and the history rule: proven
 
-These five were added together. Each one is a saved search in [`savedsearches.conf`](../infra/siem/splunk/savedsearches.conf) with the same columns as the others (`host`, `severity`, `techniques`, `description`). All five produced a real card in `#soc-alerts` on 19 November, so the Coverage page shows them as *Tested*. History, new user and sudo fired from the Caldera operation *SOC full coverage* ([scenario 03](../attack-scenarios/03-full-coverage.md)). Cron and SSH brute force fired from hand-run tests (the cron rule was loaded after the operation ran, and the brute-force Caldera step failed and is being fixed), so re-run the operation to confirm them from Caldera.
+These five were added together. Each one is a saved search in [`savedsearches.conf`](../infra/siem/splunk/savedsearches.conf) with the same columns as the others (`host`, `severity`, `techniques`, `description`). All five produced a real card in `#soc-alerts` on 19 November, from the Caldera operation *SOC full coverage* ([scenario 03](../attack-scenarios/03-full-coverage.md)), so the Coverage page shows them as *Tested*. The first run lacked the cron audit rule and used a multi-line brute-force step that failed; both were fixed, and a second run raised all six alerts. The brute-force logins come from the victim to itself, so the card shows source `127.0.0.1`.
 
 | Rule | What it looks for | Where it reads | Severity | How to test it on the victim |
 |---|---|---|---|---|
