@@ -16,7 +16,7 @@ Still to do:
 
 | Idea | Why it matters |
 |---|---|
-| ~~Tag each detection with its MITRE ATT&CK technique and keep a coverage table~~ **Done**: techniques travel with each incident, and the console has a Coverage page with a Navigator export. **Built**: rules for cron, new user, sudo, SSH brute force and history clearing are saved; next: prove each one with a real test and flip it to Tested | Real teams track detection coverage; it also shows the gaps |
+| ~~Tag each detection with its MITRE ATT&CK technique and keep a coverage table~~ **Done**: techniques travel with each incident, and the console has a Coverage page with a Navigator export. Rules for cron, new user, sudo, SSH brute force and history clearing are built and each fired a real card | Real teams track detection coverage; it also shows the gaps |
 | A detection test script: run a Caldera operation, wait, and check the expected alert reached the bot | Proves each rule works ("detection as code") |
 | More scenarios, each with a write-up and a detection: SSH brute force, persistence through cron or a new user, privilege escalation attempt | A small library beats one demo |
 | Alert noise control: suppress known-benign activity, merge repeated alerts into one incident, raise severity on repetition | False positives are the everyday problem in a SOC; show alert counts before and after |
