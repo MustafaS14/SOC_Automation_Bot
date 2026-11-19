@@ -1,9 +1,9 @@
 - id: 6d366b0e-62ee-427f-a786-ad01fe7b337c
-  name: SOC new local user
-  description: Creates a local account with no login shell and deletes it again. The agent must run as root.
+  name: 'SOC new local user'
+  description: 'Creates a local account with no login shell and deletes it again. The agent must run as root.'
   tactic: persistence
   technique_id: T1136.001
-  technique_name: Create Account: Local Account
+  technique_name: 'Create Account: Local Account'
   requirements: []
   executors:
   - name: sh

@@ -3,6 +3,8 @@
 import re
 from pathlib import Path
 
+import pytest
+
 from soc_bot.attack_coverage import BUILT, TECHNIQUES, TESTED
 
 ROOT = Path(__file__).resolve().parent.parent / "attack-scenarios" / "caldera"
@@ -54,3 +56,14 @@ def test_ability_commands_would_trip_the_rules_they_target():
 
 def test_install_script_has_unix_line_endings():
     assert b"\r" not in (ROOT / "install.sh").read_bytes()
+
+
+def test_every_file_is_valid_yaml_with_the_fields_caldera_reads():
+    yaml = pytest.importorskip("yaml")
+    for ident, text in _abilities().items():
+        (ability,) = yaml.safe_load(text)
+        assert ability["id"] == ident and ability["name"] and ability["technique_id"] and ability["technique_name"]
+        (executor,) = ability["executors"]
+        assert executor["platform"] == "linux" and executor["name"] == "sh" and executor["command"].strip()
+    adversary = yaml.safe_load(next((ROOT / "adversaries").glob("*.yml")).read_text())
+    assert adversary["name"] and adversary["atomic_ordering"] and adversary["adversary_id"]

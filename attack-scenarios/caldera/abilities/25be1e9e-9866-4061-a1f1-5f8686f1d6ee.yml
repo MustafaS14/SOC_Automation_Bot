@@ -1,9 +1,9 @@
 - id: 25be1e9e-9866-4061-a1f1-5f8686f1d6ee
-  name: SOC cron persistence
-  description: Adds a harmless cron entry and removes it again.
+  name: 'SOC cron persistence'
+  description: 'Adds a harmless cron entry and removes it again.'
   tactic: persistence
   technique_id: T1053.003
-  technique_name: Scheduled Task/Job: Cron
+  technique_name: 'Scheduled Task/Job: Cron'
   requirements: []
   executors:
   - name: sh

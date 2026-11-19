@@ -1,9 +1,9 @@
 - id: df73271c-9fc8-462e-b7a3-c8eaddd925a7
-  name: SOC history off
-  description: Switches the shell history off for this session. Does not delete anyone's history.
+  name: 'SOC history off'
+  description: 'Switches the shell history off for this session. Does not delete anyone''s history.'
   tactic: defense-evasion
   technique_id: T1070.003
-  technique_name: Clear Command History
+  technique_name: 'Clear Command History'
   requirements: []
   executors:
   - name: sh

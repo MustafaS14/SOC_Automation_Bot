@@ -1,9 +1,9 @@
 - id: f4cbdb04-b13c-446a-b6e1-19bb25a557aa
-  name: SOC demo recon
-  description: Who am I, kernel, host name and network config in one go (Discovery burst).
+  name: 'SOC demo recon'
+  description: 'Who am I, kernel, host name and network config in one go (Discovery burst).'
   tactic: discovery
   technique_id: T1082
-  technique_name: System Information Discovery
+  technique_name: 'System Information Discovery'
   requirements: []
   executors:
   - name: sh

@@ -1,9 +1,9 @@
 - id: a9baf7ba-5f86-4c2f-8ea6-c20965ec201e
-  name: SOC SSH brute force
-  description: Six wrong SSH passwords against this host, as six invented users.
+  name: 'SOC SSH brute force'
+  description: 'Six wrong SSH passwords against this host, as six invented users.'
   tactic: credential-access
   technique_id: T1110
-  technique_name: Brute Force
+  technique_name: 'Brute Force'
   requirements: []
   executors:
   - name: sh
