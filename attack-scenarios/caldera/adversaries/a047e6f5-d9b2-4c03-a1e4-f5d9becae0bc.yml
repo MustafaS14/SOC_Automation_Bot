@@ -1,0 +1,11 @@
+name: SOC full coverage
+description: One of each attack the SOC lab detects (recon, history off, cron, new user, sudo, SSH brute force).
+atomic_ordering:
+- f4cbdb04-b13c-446a-b6e1-19bb25a557aa
+- df73271c-9fc8-462e-b7a3-c8eaddd925a7
+- 25be1e9e-9866-4061-a1f1-5f8686f1d6ee
+- 6d366b0e-62ee-427f-a786-ad01fe7b337c
+- 4d9f6e88-a136-447c-9477-604ed49a1ce5
+- a9baf7ba-5f86-4c2f-8ea6-c20965ec201e
+adversary_id: a047e6f5-d9b2-4c03-a1e4-f5d9becae0bc
+objective: 495a9828-cab1-44dd-a0ca-66e58177d8cc

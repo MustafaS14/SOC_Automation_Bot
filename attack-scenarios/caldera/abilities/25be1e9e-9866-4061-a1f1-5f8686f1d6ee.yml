@@ -1,0 +1,18 @@
+- id: 25be1e9e-9866-4061-a1f1-5f8686f1d6ee
+  name: SOC cron persistence
+  description: Adds a harmless cron entry and removes it again.
+  tactic: persistence
+  technique_id: T1053.003
+  technique_name: Scheduled Task/Job: Cron
+  requirements: []
+  executors:
+  - name: sh
+    platform: linux
+    timeout: 60
+    cleanup: []
+    payloads: []
+    parsers: []
+    command: |
+      (crontab -l 2>/dev/null; echo "* * * * * /bin/true # soc-test") | crontab -
+      sleep 2
+      crontab -l 2>/dev/null | grep -v "soc-test" | crontab -
