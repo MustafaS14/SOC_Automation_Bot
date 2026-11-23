@@ -19,6 +19,43 @@ An attacker who has just got into a machine usually looks around first: who am I
 | 7 | SSH brute force: many failed logins from one address | T1110 | **Proven** by Caldera on 19 November: cards #71 and #77 (card #60 came earlier from a hand-run loop) |
 | 8 | Cron job added or changed | T1053.003 | **Proven** by Caldera on 19 November: cards #70 and #74. Needs the `cron_change` auditd rule on the victim |
 
+## Rule reference: all eight alerts
+
+Every alert is a Splunk saved search in [`savedsearches.conf`](../infra/siem/splunk/savedsearches.conf). They run every five minutes, look back fifteen minutes (the heartbeat looks back 24 hours, because it asks when a host was last heard), and each result row becomes one incident. Every search returns the same columns, which is what the webhook reads: `host`, `severity`, `techniques` and `description` (plus `src_ip` for the brute-force rule). `tests/test_attack_coverage.py` checks that every saved search posts to the bot and sets a severity and a description, so a new rule that forgets one fails the tests.
+
+| # | Alert | Fires when | Window | Severity | Reads |
+|---|---|---|---|---|---|
+| 1 | Discovery burst | Three or more different reconnaissance techniques from one host in one ten-minute slot | 10 min | Medium | auditd |
+| 2 | Masquerading process | `./splunkd` is started from a home directory (the real Splunk never is) | 15 min | High | auditd |
+| 3 | Shell history cleared or switched off | A command unsets `HISTFILE`, points history at `/dev/null`, empties or deletes a history file, or runs `history -c` | 15 min | Medium | auditd |
+| 4 | Heartbeat | A host has sent no `soc-heartbeat` line for 15 minutes | 24 h lookback | Medium | `auth.log` |
+| 5 | New local user | `useradd` logs `new user:` | 15 min | High | `auth.log` |
+| 6 | Risky sudo use | A root shell through sudo, a wrong sudo password, or a user not in sudoers | 15 min | Medium | `auth.log` |
+| 7 | SSH brute force | Five or more failed SSH logins from one address in ten minutes | 10 min | High | `auth.log` |
+| 8 | Cron job added or changed | A write to a cron file or directory by a login session | 5 min | High | auditd, key `cron_change` |
+
+Severity is set inside each search (`eval severity=...`), not in Splunk's own alert level, because the bot reads the search result. Severity decides the card colour, and the console's threat level comes from the worst severity still open.
+
+## Keeping the noise down: three layers
+
+A detection that fires every five minutes for the same thing is worse than none, because analysts stop reading the channel. Repeats are handled in three places, each with its own setting, from the earliest to the latest in the alert's life:
+
+| Layer | Where | What it does | Default | Setting |
+|---|---|---|---|---|
+| 1. Throttle | Splunk, on each saved search | After an alert fires for a host, the same alert is silent for that host | 30 minutes per host | `alert.suppress.period` in `savedsearches.conf`; `install_alerts.sh 5m` installs a short one for demos |
+| 2. Fold repeats | The bot's webhook | An alert with the same rule, host and source address as an incident that is still open and was touched recently is added to that incident instead of opening a new one: a comment, a repeat count, no new card. The webhook answers `200` with `merged: true` instead of `201` | 1 hour | `WEBHOOK_DEDUP_SECONDS` in `.env` (`0` turns it off) |
+| 3. Close stale | A command on the bot's VM | Closes incidents nobody has touched for a given time, as benign, with a comment and an audit entry. Only *New* incidents unless told otherwise; an incident an analyst has acknowledged is never closed by default | 24 hours | `python -m soc_bot close-stale --older-than 24h [--dry-run] [--include-active]` |
+
+How they fit together: the throttle stops Splunk repeating itself within half an hour. When the throttle ends and the same thing is still happening, the bot folds that firing into the incident that is already open (for up to an hour after its last activity), so a long attack is one incident with a repeat count instead of a column of identical cards. Whatever is left unread after a day is swept up by the housekeeping command, so the dashboard shows real work and its threat level means something.
+
+Things to know:
+
+- **Folding keeps a steady stream in one incident.** Each folded alert refreshes the incident's updated time, so the window slides. The stream splits into a new incident only after a quiet gap longer than the window.
+- **A closed incident is never folded into.** Closing an incident and then seeing the same alert opens a new one, which is the right outcome: the analyst decided that one was done.
+- **Source address counts.** The same rule from a different source address, or the same rule on a different host, is a different incident. A rule with no host or source (such as the heartbeat) matches other alerts with none.
+- **The console stays read-only.** Closing is done on the bot's VM, not from the web page, so a leaked console login cannot close incidents. Run `--dry-run` first: it lists what would be closed and changes nothing.
+- **What is still open:** suppressing known-benign activity by allowlist, and raising the severity of a repeated alert, are not built yet ([roadmap.md](roadmap.md)).
+
 ## How commands are read (important)
 
 Caldera runs its commands as `sh -c '...'`. When a command contains spaces or special characters, auditd writes it in **hexadecimal**, so field `a2` looks like `3E2024484F4D45...` and a plain search cannot match it. Every rule here first decodes it:
@@ -93,6 +130,8 @@ Each search ends with a `techniques` column holding the ATT&CK IDs it matched, f
 The `description` column becomes the text of the card, so an analyst sees what happened without opening Splunk. Example from a live run (card #10): *Reconnaissance burst: 3 different techniques in ten minutes (T1016 network config, T1033 who am I, T1082 system info). Commands: hostname; ip; uname; whoami.* The masquerading card shows the full `./splunkd ...` command line and the attacker address from `src_ip`. Keep the description to a few hundred characters: the card shows the first 1000.
 
 ## Alert settings (saved in Splunk)
+
+The table shows the first two alerts. The other six use the same schedule, trigger and throttle (`host`, 30 minutes), the same action and the same sharing; only the search, the severity and, for the heartbeat, the 24-hour lookback differ. See the rule reference above.
 
 | Setting | Alert 1 (discovery burst) | Alert 2 (masquerading) |
 |---|---|---|
