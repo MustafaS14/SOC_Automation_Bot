@@ -124,9 +124,14 @@ sequenceDiagram
             alt invalid payload
                 W-->>SP: 400
             else valid
-                W->>DB: insert incident
-                W->>D: embed + Acknowledge / Enrich / Isolate buttons
-                W-->>SP: 201 {"id": 12}
+                alt repeats an open incident (same rule, host, source; touched within WEBHOOK_DEDUP_SECONDS)
+                    W->>DB: add comment, raise repeat count, refresh updated time
+                    W-->>SP: 200 {"id": 12, "merged": true} (no new card)
+                else new incident
+                    W->>DB: insert incident
+                    W->>D: embed + Acknowledge / Enrich / Isolate buttons
+                    W-->>SP: 201 {"id": 12}
+                end
             end
         end
     end
