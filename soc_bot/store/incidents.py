@@ -6,7 +6,7 @@ import asyncio
 import sqlite3
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar
 
 from ..clients.base import APIError, NotFoundError
@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     url TEXT,
     classification TEXT,
     techniques TEXT NOT NULL DEFAULT '',
+    repeats INTEGER NOT NULL DEFAULT 0,
     created TEXT NOT NULL,
     updated TEXT NOT NULL
 );
@@ -83,6 +84,9 @@ class IncidentStore:
         if "techniques" not in columns:
             with self._db:
                 self._db.execute("ALTER TABLE incidents ADD COLUMN techniques TEXT NOT NULL DEFAULT ''")
+        if "repeats" not in columns:
+            with self._db:
+                self._db.execute("ALTER TABLE incidents ADD COLUMN repeats INTEGER NOT NULL DEFAULT 0")
 
     def shutdown(self) -> None:
         with self._lock:
@@ -122,6 +126,65 @@ class IncidentStore:
             )
             row = db.execute("SELECT * FROM incidents WHERE id = ?", (cur.lastrowid,)).fetchone()
             return Incident.from_row(row)
+
+        return await self._run(op)
+
+    async def merge_repeat(
+        self, *, rule: str, host: str | None, src_ip: str | None, description: str, window: float
+    ) -> Incident | None:
+        """Fold a repeated alert into the open incident it repeats, or return None when there is no such incident.
+
+        "The same" means the same rule, host and source address, still not closed, and touched within `window`
+        seconds. The incident gets a comment, its repeat count goes up and its updated time moves forward, so a steady
+        stream of alerts keeps folding into one incident until it goes quiet for the whole window.
+        """
+        if window <= 0:
+            return None
+        cutoff = (datetime.now(timezone.utc) - timedelta(seconds=window)).isoformat()
+
+        def op(db: sqlite3.Connection) -> int | None:
+            row = db.execute(
+                "SELECT id FROM incidents WHERE status != 'Closed' AND rule = ? AND host IS ? AND src_ip IS ? "
+                "AND updated >= ? ORDER BY id DESC LIMIT 1",
+                (rule, host, src_ip, cutoff),
+            ).fetchone()
+            if row is None:
+                return None
+            db.execute("UPDATE incidents SET repeats = repeats + 1 WHERE id = ?", (row["id"],))
+            note = "Fired again" + (f": {description[:300]}" if description else ".")
+            self._add_comment(db, row["id"], "splunk", note)
+            return row["id"]
+
+        incident_id = await self._run(op)
+        return None if incident_id is None else await self.get(incident_id)
+
+    async def close_stale(
+        self, older_than: timedelta, *, include_active: bool = False, dry_run: bool = False, label: str = ""
+    ) -> list[Incident]:
+        """Close incidents nobody has touched for `older_than`, as benign, and return them.
+
+        Only New incidents by default: an Active one has an analyst on it, so it is left alone unless
+        `include_active`. `dry_run` returns the same list without changing anything.
+        """
+        if older_than <= timedelta(0):
+            raise ValueError("older_than must be positive")
+        cutoff = (datetime.now(timezone.utc) - older_than).isoformat()
+        statuses = ("New", "Active") if include_active else ("New",)
+
+        def op(db: sqlite3.Connection) -> list[Incident]:
+            marks = ", ".join("?" for _ in statuses)  # only placeholders are built into the SQL
+            rows = db.execute(
+                f"SELECT * FROM incidents WHERE status IN ({marks}) AND updated < ? ORDER BY id", (*statuses, cutoff)
+            ).fetchall()
+            found = [Incident.from_row(r) for r in rows]
+            if not dry_run:
+                for inc in found:
+                    db.execute(
+                        "UPDATE incidents SET status = 'Closed', classification = 'benign', updated = ? WHERE id = ?",
+                        (_now(), inc.id),
+                    )
+                    self._add_comment(db, inc.id, "housekeeping", f"Auto-closed as benign: no activity for {label or older_than}.")
+            return found
 
         return await self._run(op)
 

@@ -237,3 +237,39 @@ def test_parse_alert_keeps_only_well_formed_technique_ids(raw, expected):
 def test_parse_alert_caps_the_number_of_techniques():
     many = ",".join(f"T{1000 + i}" for i in range(40))
     assert len(parse_alert({"search_name": "r", "result": {"techniques": many}})["techniques"]) == 12
+
+
+async def test_repeat_alert_is_folded_in_without_a_new_card():
+    store = IncidentStore(":memory:")
+    posted = []
+
+    async def on_incident(incident):
+        posted.append(incident)
+
+    headers = {"X-Webhook-Secret": "s3cret"}
+    app = create_app(store, "s3cret", on_incident, dedup_window=3600)
+    async with TestClient(TestServer(app)) as c:
+        first = await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers=headers)
+        second = await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers=headers)
+        other = await c.post("/webhook/splunk", json={**SPLUNK_PAYLOAD, "search_name": "Other rule"}, headers=headers)
+    assert first.status == 201 and (await first.json()) == {"id": 1}
+    assert second.status == 200 and (await second.json()) == {"id": 1, "merged": True}
+    assert other.status == 201
+    assert [i.id for i in posted] == [1, 2]  # the repeat posted nothing
+    assert (await store.get(1)).repeats == 1
+    store.shutdown()
+
+
+async def test_dedup_is_off_by_default_in_create_app():
+    store = IncidentStore(":memory:")
+    posted = []
+
+    async def on_incident(incident):
+        posted.append(incident)
+
+    headers = {"X-Webhook-Secret": "s3cret"}
+    async with TestClient(TestServer(create_app(store, "s3cret", on_incident))) as c:
+        for _ in range(2):
+            assert (await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers=headers)).status == 201
+    assert len(posted) == 2
+    store.shutdown()

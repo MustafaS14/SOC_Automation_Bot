@@ -186,6 +186,8 @@ Example audit entry:
 - **Authentication:** the secret is read from the `X-Webhook-Secret` header only and compared in constant time. An empty `WEBHOOK_SECRET` is refused at startup (outside mock mode) and by `create_app`.
 - **Input limits:** 64 KB body limit, and every field is validated and truncated before it is stored.
 - **Rate limit:** authenticated requests are limited to `WEBHOOK_RATE_LIMIT` per minute (default 30, all senders combined); extra requests get `429`. Requests with a wrong secret are rejected with `401` and do not use up the budget.
+- **Repeats:** an alert with the same rule, host and source address as an incident that is still open, and touched within `WEBHOOK_DEDUP_SECONDS` (default 3600, `0` turns it off), is not a new incident. It is added to the open one as a comment and a repeat count, no new card is posted, and the answer is `200` with `"merged": true` instead of `201`.
+- **Housekeeping:** `python -m soc_bot close-stale --older-than 24h` closes incidents nobody has touched for that long, as benign, with a comment and an audit entry. Only New incidents unless you add `--include-active`; add `--dry-run` first to see the list. Run it from the bot's folder so it opens the same database.
 - **The limit is global.** Anyone holding a leaked secret can use up the whole budget and so delay real alerts. If the secret may have leaked, rotate `WEBHOOK_SECRET` and update the Splunk alert action (or the proxy that adds the header) to send the new value.
 - **Network exposure:** the receiver binds to `127.0.0.1` by default. Keep it there or on a private lab network. Anything wider sends the secret in clear text over plain HTTP, so it needs TLS (for example a reverse proxy) or a network you trust.
 

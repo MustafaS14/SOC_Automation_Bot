@@ -133,7 +133,7 @@ async def test_the_list_does_not_carry_comments(api):
 async def test_only_incident_fields_come_back(api):
     body = await (await api.get("/api/incidents/1", headers=HEADERS)).json()
     assert set(body) == {"id", "rule", "severity", "status", "host", "src_ip", "assignee", "description", "url",
-                         "classification", "created", "updated", "comments", "techniques"}
+                         "classification", "created", "updated", "comments", "techniques", "repeats"}
 
 
 async def test_counts_match_the_store(api):

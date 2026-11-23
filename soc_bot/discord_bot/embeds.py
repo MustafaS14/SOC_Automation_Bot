@@ -74,6 +74,8 @@ def incident_detail(incident: Incident) -> discord.Embed:
     embed.add_field(name="Host", value=md(incident.host, 100) if incident.host else "n/a")
     embed.add_field(name="Source IP", value=f"`{incident.src_ip}`" if incident.src_ip else "n/a")
     embed.add_field(name="Created", value=_when(incident.created))
+    if incident.repeats:
+        embed.add_field(name="Repeats", value=f"{incident.repeats} more alert(s) folded in")
     if incident.techniques:
         embed.add_field(name="ATT&CK", value=", ".join(f"`{t}`" for t in incident.techniques), inline=False)
     if incident.classification:

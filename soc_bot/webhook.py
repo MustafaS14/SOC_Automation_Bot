@@ -120,6 +120,7 @@ def create_app(
     link_hosts: frozenset[str] = frozenset(),
     clock: Callable[[], float] = time.monotonic,
     api_secret: str = "",
+    dedup_window: float = 0,
 ) -> web.Application:
     if not secret.strip():
         # compare_digest(b"", b"") is True, so an empty secret would accept anyone.
@@ -141,6 +142,14 @@ def create_app(
             fields = parse_alert(await request.json(), link_hosts)
         except (ValueError, ValidationError) as exc:
             return web.json_response({"error": str(exc) or "invalid JSON"}, status=400)
+        if dedup_window > 0:
+            merged = await store.merge_repeat(
+                rule=fields["rule"], host=fields["host"], src_ip=fields["src_ip"],
+                description=fields["description"], window=dedup_window,
+            )
+            if merged is not None:
+                log.info("Alert %r folded into incident #%s (repeat %s)", fields["rule"], merged.id, merged.repeats)
+                return web.json_response({"id": merged.id, "merged": True}, status=200)
         incident = await store.create(**fields)
         try:
             await on_incident(incident)

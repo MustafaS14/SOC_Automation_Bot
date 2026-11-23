@@ -112,6 +112,7 @@ class Settings:
     webhook_port: int = 8765
     webhook_secret: str = field(default="", repr=False)
     webhook_rate_limit: int = 30
+    webhook_dedup_seconds: int = 3600  # repeats of an open incident inside this window are folded in; 0 turns it off
     api_secret: str = field(default="", repr=False)  # read-only incident API; its routes exist only when this is set
     webhook_link_hosts: tuple[str, ...] = ()
     splunk_url: str = ""
@@ -159,6 +160,7 @@ class Settings:
             webhook_secret=secret("WEBHOOK_SECRET"),
             api_secret=secret("API_SECRET"),
             webhook_rate_limit=_int_default("WEBHOOK_RATE_LIMIT", 30),
+            webhook_dedup_seconds=_int_default("WEBHOOK_DEDUP_SECONDS", 3600),
             webhook_link_hosts=_str_list("WEBHOOK_LINK_HOSTS"),
             splunk_url=os.getenv("SPLUNK_URL", "").strip().rstrip("/"),
             splunk_token=secret("SPLUNK_TOKEN"),
@@ -232,6 +234,8 @@ class Settings:
                 raise ConfigError("API_SECRET must be a different secret from WEBHOOK_SECRET.")
         if self.webhook_rate_limit < 1:
             raise ConfigError("WEBHOOK_RATE_LIMIT must be at least 1.")
+        if self.webhook_dedup_seconds < 0:
+            raise ConfigError("WEBHOOK_DEDUP_SECONDS must be 0 (off) or more.")
         if not 1 <= self.webhook_port <= 65535:
             raise ConfigError("WEBHOOK_PORT must be between 1 and 65535.")
         if any("/" in h or ":" in h or " " in h for h in self.webhook_link_hosts):
