@@ -38,6 +38,18 @@ To shut down cleanly, run `bash scripts/lab/stop-attacker.sh` on soc-attacker, `
 
 The manual steps follow for when something needs doing by hand.
 
+## Keeping the incident list readable
+
+Repeated alerts fold into the open incident (see `WEBHOOK_DEDUP_SECONDS` in `.env.example`), so running the Caldera operation again inside the hour adds a comment and a repeat count instead of a new card. To clear out old test incidents, run this on soc-siem, from the bot's folder, in the bot's virtual environment:
+
+```bash
+cd ~/SOC_Automation_Bot && source .venv/bin/activate
+python -m soc_bot close-stale --older-than 24h --dry-run    # only lists what it would close
+python -m soc_bot close-stale --older-than 24h              # closes them as benign
+```
+
+It leaves incidents an analyst has acknowledged unless you add `--include-active`, and each run is written to the audit log. The console is read-only by design, so this is done on the bot's VM. Restart the bot after pulling this change so it uses the new setting.
+
 ## Starting the lab
 
 1. **Plug the laptop in.** The Windows hypervisor can stay on `Auto` (needed for WSL) as long as `soc-siem` has 4 CPUs. If freezes with *soft lockup* messages return, see the hypervisor fallback in [troubleshooting.md](troubleshooting.md).

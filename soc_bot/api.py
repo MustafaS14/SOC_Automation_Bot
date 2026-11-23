@@ -50,7 +50,7 @@ def incident_json(inc: Incident, *, comments: bool = False) -> dict[str, Any]:
         "host": _clean(inc.host), "src_ip": inc.src_ip, "assignee": _clean(inc.assignee),
         "description": redact(inc.description), "url": inc.url, "classification": inc.classification,
         "created": _iso(inc.created), "updated": _iso(inc.updated),
-        "techniques": list(inc.techniques),
+        "techniques": list(inc.techniques), "repeats": inc.repeats,
     }
     if comments:
         data["comments"] = [comment_json(c) for c in inc.comments]

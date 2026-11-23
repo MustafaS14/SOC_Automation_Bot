@@ -270,3 +270,13 @@ def test_settings_use_credentials_for_every_secret(monkeypatch, tmp_path):
     monkeypatch.setenv("CREDENTIALS_DIRECTORY", str(tmp_path))
     monkeypatch.delenv("SOC_WEB_SECRET_KEY", raising=False)
     assert WebSettings.from_env().secret_key == "k" * 40
+
+
+def test_dedup_window_defaults_to_an_hour_and_zero_turns_it_off(monkeypatch):
+    assert _from_env(monkeypatch).webhook_dedup_seconds == 3600
+    assert _from_env(monkeypatch, WEBHOOK_DEDUP_SECONDS="0").webhook_dedup_seconds == 0
+
+
+def test_negative_dedup_window_is_rejected():
+    with pytest.raises(ConfigError, match="WEBHOOK_DEDUP_SECONDS"):
+        Settings(**{**BASE, "webhook_dedup_seconds": -1}).validate()

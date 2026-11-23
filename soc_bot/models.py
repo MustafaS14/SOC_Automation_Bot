@@ -69,6 +69,7 @@ class Incident:
     updated: datetime | None = None
     comments: list[Comment] = field(default_factory=list)
     techniques: list[str] = field(default_factory=list)
+    repeats: int = 0  # how many later alerts were folded into this incident instead of opening a new one
 
     @classmethod
     def from_row(cls, row: Mapping[str, Any], comments: list[Comment] | None = None) -> Incident:
@@ -76,6 +77,10 @@ class Incident:
             techniques = parse_techniques(row["techniques"])
         except (KeyError, IndexError):  # a row from a database or test that predates the column
             techniques = []
+        try:
+            repeats = int(row["repeats"] or 0)
+        except (KeyError, IndexError):  # a database from before the repeats column
+            repeats = 0
         return cls(
             id=row["id"],
             rule=row["rule"],
@@ -91,6 +96,7 @@ class Incident:
             updated=_parse_dt(row["updated"]),
             comments=comments or [],
             techniques=techniques,
+            repeats=repeats,
         )
 
 
