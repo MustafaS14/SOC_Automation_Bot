@@ -480,14 +480,18 @@ a.attack:hover { border-color: var(--cream); color: var(--cream); }
 @media (max-width: 560px) { .hb { left: 12px; bottom: 12px; } .hb-panel { width: calc(100vw - 24px); } }
 
 /* ---------- timeline: two stacked-column charts on one time axis. Series colours were checked with the palette validator
-   on the console's panel colour, in this order: attack types blue, orange, aqua; activity yellow, magenta, violet, red. ---------- */
+   on the console's panel colour, in this order: attack types blue, orange, aqua, yellow, magenta, green, violet, red (grey for unnamed rules); activity yellow,
+   magenta, violet, red (a separate chart with its own legend). ---------- */
 :root {
   --viz-a0: #898781; --viz-a1: #3987e5; --viz-a2: #d95926; --viz-a3: #199e70;
+  --viz-a4: #c98500; --viz-a5: #d55181; --viz-a6: #0ca30c; --viz-a7: #9085e9; --viz-a8: #e66767;
   --viz-b1: #c98500; --viz-b2: #d55181; --viz-b3: #9085e9; --viz-b4: #e66767;
 }
 .f-a0 { fill: var(--viz-a0); } .f-a1 { fill: var(--viz-a1); } .f-a2 { fill: var(--viz-a2); } .f-a3 { fill: var(--viz-a3); }
+.f-a4 { fill: var(--viz-a4); } .f-a5 { fill: var(--viz-a5); } .f-a6 { fill: var(--viz-a6); } .f-a7 { fill: var(--viz-a7); } .f-a8 { fill: var(--viz-a8); }
 .f-b1 { fill: var(--viz-b1); } .f-b2 { fill: var(--viz-b2); } .f-b3 { fill: var(--viz-b3); } .f-b4 { fill: var(--viz-b4); }
 .sw-a0 { background: var(--viz-a0); } .sw-a1 { background: var(--viz-a1); } .sw-a2 { background: var(--viz-a2); } .sw-a3 { background: var(--viz-a3); }
+.sw-a4 { background: var(--viz-a4); } .sw-a5 { background: var(--viz-a5); } .sw-a6 { background: var(--viz-a6); } .sw-a7 { background: var(--viz-a7); } .sw-a8 { background: var(--viz-a8); }
 .sw-b1 { background: var(--viz-b1); } .sw-b2 { background: var(--viz-b2); } .sw-b3 { background: var(--viz-b3); } .sw-b4 { background: var(--viz-b4); }
 .tl-filters { align-items: end; }
 .tl-filters > .tl-presets { display: flex; flex-wrap: wrap; gap: 8px; flex: 1 1 100%; min-width: 0; }
