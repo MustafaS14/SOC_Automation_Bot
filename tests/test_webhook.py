@@ -250,11 +250,14 @@ async def test_repeat_alert_is_folded_in_without_a_new_card():
     app = create_app(store, "s3cret", on_incident, dedup_window=3600)
     async with TestClient(TestServer(app)) as c:
         first = await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers=headers)
+        first_status, first_body = first.status, await first.json()  # read each body before the next request
         second = await c.post("/webhook/splunk", json=SPLUNK_PAYLOAD, headers=headers)
+        second_status, second_body = second.status, await second.json()
         other = await c.post("/webhook/splunk", json={**SPLUNK_PAYLOAD, "search_name": "Other rule"}, headers=headers)
-    assert first.status == 201 and (await first.json()) == {"id": 1}
-    assert second.status == 200 and (await second.json()) == {"id": 1, "merged": True}
-    assert other.status == 201
+        other_status = other.status
+    assert (first_status, first_body) == (201, {"id": 1})
+    assert (second_status, second_body) == (200, {"id": 1, "merged": True})
+    assert other_status == 201
     assert [i.id for i in posted] == [1, 2]  # the repeat posted nothing
     assert (await store.get(1)).repeats == 1
     store.shutdown()
