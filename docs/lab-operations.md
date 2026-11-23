@@ -28,7 +28,7 @@ cd ~/SOC_Automation_Bot && git pull && bash scripts/lab/start-attacker.sh
 bash ~/lab/start-victim.sh
 ```
 
-The victim has no git and no clone of the repository. Copy the scripts to it from the PC whenever they change: `scp -r scripts/lab mus@192.168.56.20:~/` from the project folder; the folder arrives as `~/lab`. Start the attacker before the victim, because the agent downloads from Caldera.
+The victim has no git and no clone of the repository. Copy the scripts to it from the PC whenever they change: `scp -r scripts/lab mus@192.168.56.20:~/` from the project folder; the folder arrives as `~/lab`. Start the attacker before the victim, because the agent downloads from Caldera. Keep all three VMs on UTC (`sudo timedatectl set-timezone Etc/UTC`): a victim left on a local zone shows log and card times an hour off the others, even though its clock is correct.
 
 On the PC, `.\scripts\lab\start-tunnels.ps1` opens the two SSH tunnels, then start the console with your launcher (set `SPLUNK_URL` and `SPLUNK_VERIFY_TLS` first, see [live-lab.md](live-lab.md)).
 
