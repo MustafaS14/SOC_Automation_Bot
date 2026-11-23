@@ -53,8 +53,25 @@ ATTACKS = (
     Kind("discovery", "Discovery burst", "a1"),
     Kind("masquerade", "Masquerading", "a2"),
     Kind("health", "Pipeline health", "a3"),
-    Kind("other", "Other alerts", "a0"),
+    Kind("history", "Shell history cleared", "a4"),
+    Kind("newuser", "New local user", "a5"),
+    Kind("sudo", "Risky sudo use", "a6"),
+    Kind("bruteforce", "SSH brute force", "a7"),
+    Kind("cron", "Cron job changes", "a8"),
+    Kind("other", "Other alerts", "a0"),   # neutral grey: only rules this module does not know by name
 )
+# Rule-name fragments (lower case) for each attack type, checked in order.
+_RULE_WORDS = (
+    ("discovery burst", "discovery"),
+    ("masquerad", "masquerade"),
+    ("heartbeat", "health"),
+    ("shell history", "history"),
+    ("new local user", "newuser"),
+    ("sudo", "sudo"),
+    ("brute force", "bruteforce"),
+    ("cron job", "cron"),
+)
+_ATTACK_BY_KEY = {k.key: k for k in ATTACKS}
 # Fixed stacking order, bottom to top; the colours were validated in this order on the console's dark surface.
 ACTIVITY = (
     Kind("commands", "Commands run", "b1"),
@@ -68,13 +85,10 @@ _BY_LABEL = {k.label: k for k in ACTIVITY}
 def attack_kind(rule: str) -> Kind:
     """The attack type of a detection rule, by its name. Anything unknown is "Other alerts"."""
     name = (rule or "").lower()
-    if "discovery burst" in name:
-        return ATTACKS[0]
-    if "masquerad" in name:
-        return ATTACKS[1]
-    if "heartbeat" in name:
-        return ATTACKS[2]
-    return ATTACKS[3]
+    for word, key in _RULE_WORDS:
+        if word in name:
+            return _ATTACK_BY_KEY[key]
+    return _ATTACK_BY_KEY["other"]
 
 
 def techniques_for(kind: Kind) -> list[str]:

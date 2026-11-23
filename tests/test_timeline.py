@@ -55,6 +55,12 @@ def test_rules_fold_into_a_few_known_attack_types_and_unknown_ones_are_other():
     assert tl.attack_kind(MASQUERADE).key == "masquerade"
     assert tl.attack_kind("Heartbeat: no pipeline heartbeat from a host for 15 minutes").key == "health"
     assert tl.attack_kind("<script>alert(1)</script>").key == "other" and tl.attack_kind("").key == "other"
+    for rule, key in (("Shell history cleared or switched off", "history"),
+                      ("New local user account created", "newuser"),
+                      ("Risky sudo use: root shell, wrong password or not allowed", "sudo"),
+                      ("SSH brute force: many failed logins from one address", "bruteforce"),
+                      ("Cron job added or changed", "cron")):
+        assert tl.attack_kind(rule).key == key, rule
     r = tl.parse_range({"range": "1h"}, NOW)
     out = tl.group_alerts({DISCOVERY: [1] * r.slots, "Cron anomaly": [2] * r.slots, "Other too": [1] * r.slots}, r.slots)
     assert out["discovery"] == [1] * r.slots and out["other"] == [3] * r.slots and out["masquerade"] == [0] * r.slots
@@ -63,7 +69,19 @@ def test_rules_fold_into_a_few_known_attack_types_and_unknown_ones_are_other():
 def test_every_tested_attack_type_lists_its_attck_techniques():
     assert "T1036.005" in tl.techniques_for(tl.ATTACKS[1])
     assert {"T1033", "T1057", "T1082", "T1087.001", "T1016"} <= set(tl.techniques_for(tl.ATTACKS[0]))
-    assert {"T1070.003", "T1136.001", "T1548.003", "T1110", "T1053.003"} <= set(tl.techniques_for(tl.ATTACKS[3]))
+    by_key = {k.key: k for k in tl.ATTACKS}
+    for key, tid in (("history", "T1070.003"), ("newuser", "T1136.001"), ("sudo", "T1548.003"),
+                     ("bruteforce", "T1110"), ("cron", "T1053.003")):
+        assert tid in tl.techniques_for(by_key[key]), key
+    assert tl.techniques_for(by_key["other"]) == []
+
+
+def test_every_attack_type_has_its_own_colour_slot_and_other_is_grey():
+    classes = [k.cls for k in tl.ATTACKS]
+    assert len(set(classes)) == len(classes) and tl.ATTACKS[-1].key == "other" and tl.ATTACKS[-1].cls == "a0"
+    css = open("soc_web/static/style.css", encoding="utf-8").read()
+    for c in classes:
+        assert f".f-{c} " in css and f".sw-{c} " in css and f"--viz-{c}:" in css, c
 
 
 def test_activity_rows_land_in_the_right_slot_and_junk_is_ignored():
