@@ -13,6 +13,29 @@ How to start, use and stop the lab. For how it was built, see [lab-build-log.md]
 
 `<your-user>` is the user you created during each VM's install.
 
+## Quick start with the scripts
+
+One command per machine does everything in the manual steps below. Each script is safe to run again: it checks what is already running and only fixes the rest. Start the VMs in VirtualBox first (SIEM, then victim, then attacker), log in to each over SSH, then:
+
+```bash
+# soc-siem: clock, Splunk + Logstash, alert definitions, the bot (in tmux)
+cd ~/SOC_Automation_Bot && git pull && bash scripts/lab/start-siem.sh
+
+# soc-victim: clock, auditd with the SOC rules, Filebeat
+cd ~/SOC_Automation_Bot && git pull && bash scripts/lab/start-victim.sh
+
+# soc-attacker: Caldera in tmux, the SOC profiles, exactly one agent
+cd ~/SOC_Automation_Bot && git pull && bash scripts/lab/start-attacker.sh
+```
+
+On the PC, `.\scripts\lab\start-tunnels.ps1` opens the two SSH tunnels, then start the console with your launcher (set `SPLUNK_URL` and `SPLUNK_VERIFY_TLS` first, see [live-lab.md](live-lab.md)).
+
+If Caldera cannot read its saved state (the log says "Failed to decrypt saved Caldera state") the attacker script restarts it with `--fresh`. Old operations are dropped; the SOC abilities and adversary are plain files and stay. Log in to Caldera as `red` with the password `admin`, typing it by hand: a browser autofill leaves the Log In button disabled.
+
+To shut down cleanly, run `bash scripts/lab/stop-attacker.sh` on soc-attacker and `bash scripts/lab/stop-siem.sh` on soc-siem, then `sudo poweroff` on each.
+
+The manual steps follow for when something needs doing by hand.
+
 ## Starting the lab
 
 1. **Plug the laptop in.** The Windows hypervisor can stay on `Auto` (needed for WSL) as long as `soc-siem` has 4 CPUs. If freezes with *soft lockup* messages return, see the hypervisor fallback in [troubleshooting.md](troubleshooting.md).
