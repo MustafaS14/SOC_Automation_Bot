@@ -157,10 +157,10 @@ def test_build_gives_totals_the_busiest_slot_a_table_and_survives_one_side_missi
     v = tl.build(r, alerts, activity)
     assert v["tiles"]["alerts"] == 4 and v["tiles"]["alert_peak"] == 3 and v["tiles"]["top_type"] == "Discovery burst"
     assert v["tiles"]["activity"] == 40 and v["tiles"]["activity_peak"] == 40
-    assert len(v["tips"]) == r.slots and v["table"][0]["when"].endswith("UTC") and len(v["headers"]) == 8
+    assert len(v["tips"]) == r.slots and v["table"][0]["when"].endswith("UTC") and len(v["headers"]) == len(tl.ATTACKS) + len(tl.ACTIVITY)
     assert all(any(row["cells"]) for row in v["table"])                 # only slots with something in them
     only_alerts = tl.build(r, alerts, None)
-    assert only_alerts["activity"] is None and "activity" not in only_alerts["tiles"] and len(only_alerts["headers"]) == 4
+    assert only_alerts["activity"] is None and "activity" not in only_alerts["tiles"] and len(only_alerts["headers"]) == len(tl.ATTACKS)
     assert tl.build(r, None, None)["tiles"] == {}
 
 
