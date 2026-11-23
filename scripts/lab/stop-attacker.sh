@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# Stop the agent and Caldera cleanly (Caldera saves its state on Ctrl+C) before powering off soc-attacker.
+# Stop Caldera cleanly (Caldera saves its state on Ctrl+C) before powering off soc-attacker.
 set -u
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib.sh"
-say "Stopping the agent"
-sudo pkill -x splunkd 2>/dev/null; ok "agent stopped"
 say "Stopping Caldera"
 tmux send-keys -t caldera C-c 2>/dev/null
 for _ in $(seq 1 15); do port_open 8888 || break; sleep 2; done

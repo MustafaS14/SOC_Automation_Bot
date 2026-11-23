@@ -13,7 +13,7 @@ SCRIPTS = sorted(LAB.glob("*.sh"))
 def test_expected_scripts_exist():
     names = {p.name for p in SCRIPTS}
     assert {"start-siem.sh", "start-victim.sh", "start-attacker.sh",
-            "stop-siem.sh", "stop-attacker.sh", "lib.sh"} <= names
+            "stop-siem.sh", "stop-attacker.sh", "stop-victim.sh", "lib.sh"} <= names
     assert (LAB / "start-tunnels.ps1").exists()
 
 
@@ -29,12 +29,22 @@ def test_script_parses(script):
     assert result.returncode == 0, result.stderr
 
 
-def test_attacker_script_keeps_one_agent_and_never_hard_codes_secrets():
-    text = (LAB / "start-attacker.sh").read_text()
+def test_victim_script_keeps_one_agent_and_never_hard_codes_secrets():
+    text = (LAB / "start-victim.sh").read_text()
     assert "pgrep -x splunkd" in text          # counts agents before starting another
-    assert "--fresh" in text                   # recovers from an unreadable saved state
     for banned in ("password=", "TOKEN=", "API_SECRET="):
         assert banned not in text
+
+
+def test_agent_runs_on_the_victim_not_the_attacker():
+    # The agent must run where auditd and Filebeat watch it. Starting it on soc-attacker
+    # produced no alerts, so the attacker script must never start one.
+    assert "./splunkd" not in (LAB / "start-attacker.sh").read_text()
+    assert "./splunkd" in (LAB / "start-victim.sh").read_text()
+
+
+def test_attacker_script_recovers_from_unreadable_caldera_state():
+    assert "--fresh" in (LAB / "start-attacker.sh").read_text()
 
 
 def test_victim_script_checks_the_cron_rules():
