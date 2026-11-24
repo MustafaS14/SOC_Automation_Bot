@@ -13,7 +13,7 @@ An attacker who has just got into a machine usually looks around first: who am I
 | 1 | Discovery burst: several reconnaissance commands in ten minutes | T1033, T1057, T1082, T1087.001 (T1016 is also in the rule) | **Proven** on 2 November: one row with four kinds of activity; alert saved |
 | 2 | `./splunkd` started from a home directory | T1036.005 (match legitimate name) | **Proven**: found the agent start and the alert fired at 14:05 UTC on 2 November, severity High |
 | 3 | Shell history cleared or switched off | T1070.003 | **Proven** by Caldera on 19 November: card #49 |
-| 4 | Heartbeat: no pipeline heartbeat from a host for 15 minutes | none (health check, not an attack) | Written, not yet proven: needs the cron file on the victim and a real outage test |
+| 4 | Heartbeat: no pipeline heartbeat from a host for 15 minutes | none (health check, not an attack) | Proven: Filebeat was stopped on the victim at 16:50 UTC and card #105 arrived at 17:05 UTC, about 15 minutes later |
 | 5 | New local user account created | T1136.001 | **Proven** by Caldera on 19 November: cards #52 and #58 |
 | 6 | Risky sudo use: root shell, wrong password or not allowed | T1548.003 | **Proven** by Caldera on 19 November: cards #53 and #56 |
 | 7 | SSH brute force: many failed logins from one address | T1110 | **Proven** by Caldera on 19 November: cards #71 and #77 (card #60 came earlier from a hand-run loop) |
@@ -119,6 +119,7 @@ index=linux sourcetype=linux:auth "soc-heartbeat: alive"
 - **Why:** the other rules only speak when something happens. If Filebeat, Logstash or the network link stops, nothing is logged and nothing alerts, which looks the same as a quiet night. A host that is alive writes one line every five minutes, so silence is a signal.
 - **How:** a cron file on the victim ([`infra/heartbeat/soc-heartbeat.cron`](../infra/heartbeat/soc-heartbeat.cron)) writes `soc-heartbeat: alive` to `auth.log` every five minutes. Filebeat already ships that file. The search takes the newest heartbeat per host over the last 24 hours and fires when it is 15 minutes old or more.
 - **Safe to install in any order:** a host that has never sent a heartbeat has no row, so the alert stays silent until the cron file is installed. The search covers 24 hours, so a host silent for longer than that drops out.
+- **Proven with a real outage (2026-11-24):** `sudo systemctl stop filebeat` on the victim at 16:50:27 UTC, with the last heartbeat written at 16:50:01. The console's pulse widget went from green to silent, and the Discord card (#105, Medium, host `soc-victim`) arrived at 17:05 UTC. `sudo systemctl start filebeat` sent the queued heartbeats and the widget recovered. The card carries the generic Acknowledge, Enrich IP and Isolate host buttons; Enrich IP has nothing to look up here, and isolating a host because its logs went quiet is rarely the right first move, since it may just be a stopped service.
 - **Limits:** it proves the path from the victim to Splunk, not the path from Splunk to the bot. If Splunk or the bot itself is down, no card appears, and the console's status strip is the place to see that. The throttle repeats the card every 30 minutes (or 5 minutes with `install_alerts.sh 5m`) for as long as the host stays silent. It has no ATT&CK technique, so the Coverage page does not list it.
 
 ## How techniques reach the incident

@@ -446,6 +446,8 @@ The lab was started from cold with the one-command scripts (Splunk took about 20
 - `/unisolate` requires an incident number, and the host name must match the inventory exactly. `soc-vict` was refused, which is the allow-list doing its job.
 - A second Caldera agent appeared on the victim after the isolation test, so every step ran twice. Check `pgrep -a splunkd` shows one line before each operation.
 
+**Heartbeat proven.** Later the same day the pipeline-health alert was tested with a real outage. The cron heartbeat was already installed on the victim (dated 2026-11-18). Filebeat was stopped at 16:50:27 UTC, a few seconds after the last heartbeat was written. The console's pulse widget went silent and card #105, "Heartbeat: no pipeline heartbeat from a host for 15 minutes" (Medium, `soc-victim`), arrived at 17:05 UTC. Starting Filebeat again sent the queued lines and the widget recovered. Note that `grep` on `auth.log` needs `-a`, because the file contains a few non-text bytes and plain `grep` only says "binary file matches".
+
 ## 21. Next
 
 - Run the bot as a systemd service on `soc-siem` instead of by hand.
