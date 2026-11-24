@@ -50,7 +50,7 @@ Severity is a judgement call for a lab setting: **High** means an unauthenticate
 | Validation and "not configured" error text is sent to Discord without markdown escaping | Low | The validators already strip backticks from echoed input, so the practical risk is small; unverified |
 | Mock mode shows its footer on alert embeds only | Info | Confirm and result embeds carry a `[MOCK]` tag instead |
 | Tests for the isolate and unisolate deny-list refusal were not located in review | Low | The code path is as described above, but a dedicated test should be confirmed |
-| Not yet tested against a live Splunk and a real isolation | Medium | Planned for the next phase of the lab |
+| ~~Not yet tested against a live Splunk and a real isolation~~ | Medium | Done: the lab runs against live Splunk, and isolate and release were tested from Discord on the victim VM, with the restricted `responder` key |
 
 ## How this was done
 

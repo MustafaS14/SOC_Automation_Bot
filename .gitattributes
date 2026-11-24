@@ -1,3 +1,4 @@
 *.sh text eol=lf
 infra/responder/soc-* text eol=lf
+infra/responder/responder.sudoers text eol=lf
 attack-scenarios/caldera/** text eol=lf

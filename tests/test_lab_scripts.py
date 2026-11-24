@@ -22,6 +22,15 @@ def test_script_uses_lf_endings(script):
     assert b"\r" not in script.read_bytes(), f"{script.name} has CRLF line endings"
 
 
+RESPONDER = Path(__file__).resolve().parent.parent / "infra" / "responder"
+
+
+@pytest.mark.parametrize("name", ["soc-isolate", "soc-unisolate", "soc-gate", "responder.sudoers"])
+def test_responder_files_use_lf_endings(name):
+    # CRLF breaks both the shell scripts and the sudoers rule once they are copied to the victim.
+    assert b"\r" not in (RESPONDER / name).read_bytes(), f"{name} has CRLF line endings"
+
+
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
 @pytest.mark.parametrize("script", SCRIPTS, ids=lambda p: p.name)
 def test_script_parses(script):

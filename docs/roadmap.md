@@ -8,7 +8,7 @@ Done: `soc-siem` with Splunk and Logstash, the victim's auditd logs shipped thro
 
 Still to do:
 
-1. Create the `responder` user on the victim, restrict its SSH key with a forced command, and test isolation from a snapshot.
+1. ~~Create the `responder` user on the victim, restrict its SSH key with a forced command, and test isolation~~ **Done**: the key is limited to two exact commands (`restrict`, `from=` the SIEM, forced `soc-gate`), and the Isolate button and `/unisolate` were proven on a real card from Discord, with both actions in the audit channel. The firewall blocks TCP from the attacker while the SIEM can still reach the host. Ping still gets through an isolated host (UFW accepts ICMP echo by default); close that if it matters.
 2. Add a retry path for the alert action: a card is lost today when the bot is down at the moment an alert fires.
 3. Record a short demo: attack, alert in Discord, triage, isolation.
 
