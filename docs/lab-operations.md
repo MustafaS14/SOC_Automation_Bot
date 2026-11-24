@@ -98,6 +98,19 @@ python -m soc_bot
 
 It runs in the foreground; use a second SSH window for anything else and `Ctrl+C` to stop it. If it reports `address already in use`, an old copy is still running: `pkill -f "python -m soc_bot"`. Plain `python` outside the virtual environment fails. Setup is in [discord-setup.md](discord-setup.md); making it a systemd service is on the to-do list.
 
+## Host isolation: the responder account
+
+Isolating a host cuts it off from everything except `soc-siem`, so the bot can still release it and Filebeat keeps shipping logs. The bot does it over SSH as a restricted `responder` account on the victim. The files and the full install are in [`infra/responder/`](../infra/responder/README.md). In short:
+
+1. **Snapshot the victim first** (VirtualBox, `before-isolation-test`).
+2. **Copy and install** the four files on the victim. If they come from Windows, strip CRLF first: `sed -i 's/\r$//' soc-isolate soc-unisolate soc-gate responder.sudoers`, then check `sudo visudo -cf /etc/sudoers.d/responder` says `parsed OK`.
+3. **Make the bot's key** on `soc-siem` (`ssh-keygen -t ed25519 -N "" -f ~/.ssh/soc_bot_responder -C soc-bot`) and put its public line in `/home/responder/.ssh/authorized_keys` as `restrict,from="192.168.56.10",command="/usr/local/sbin/soc-gate" <key>`. If you ever regenerate the key, replace that line too.
+4. **Test from `soc-siem`:** `ssh -i ~/.ssh/soc_bot_responder responder@192.168.56.20 "sudo -n /usr/local/sbin/soc-unisolate"` prints `released`; the same key running `id`, or asking for a shell, prints `denied`.
+5. **Tell the bot** in `~/SOC_Automation_Bot/.env` on `soc-siem`: `RESPONDER_HOSTS=soc-victim=192.168.56.20`, `RESPONDER_USER=responder`, `RESPONDER_SSH_KEY=/home/soc-siem/.ssh/soc_bot_responder`, `RESPONDER_KNOWN_HOSTS=/home/soc-siem/.ssh/known_hosts`. Restart the bot (`pkill -f "python -m soc_bot"; bash scripts/lab/start-siem.sh`).
+6. **Use it:** the **Isolate host** button on a card, or `/isolate host:soc-victim reason:... incident:N`. Release with `/unisolate host:soc-victim reason:... incident:N`. The host name must match the inventory exactly, and both commands need an incident number. Both are written to the audit channel.
+
+To check the result, use a TCP connection, not ping: from `soc-attacker`, `nc -zv -w 3 192.168.56.20 22` times out while the victim is isolated and succeeds after release. Ping still gets through an isolated host, because UFW accepts ICMP echo by default. Your own SSH session to the victim will freeze while it is isolated; that is expected. If the bot is unavailable, release it by hand from `soc-siem` with the `soc-unisolate` command in step 4.
+
 ## Stopping the lab
 
 1. Stop the Sandcat agent on the victim (`Ctrl+C` in the terminal where it runs).
