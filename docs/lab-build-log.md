@@ -424,7 +424,29 @@ A full run from a cold start, done for a demo, showed what a restart of the lab 
 - **Alert timing.** The Masquerading card (#4) arrived about 5 minutes after the agent started; a later start was silent until the 30-minute throttle ended (card #6). Searches run every 5 minutes and look back 15; with a throttle of 5 minutes, one burst posted three cards (#7 to #9). See [lab-operations.md](lab-operations.md#when-a-card-appears).
 - **Caldera drives the Discovery alert.** The built-in Caldera Discovery adversary only repeated `ps` on Linux. A custom ability (`whoami; id; uname -a; hostname; ip a`) in an adversary profile, started as an operation, produced the three techniques by itself and a Discovery card in Discord. Steps in [scenario 02](../attack-scenarios/02-soc-demo-discovery.md).
 
-## 20. Next
+## 20. Isolation proven from Discord (2026-11-24)
+
+The lab was started from cold with the one-command scripts (Splunk took about 20 minutes to turn healthy, which is normal after a boot), then the last unproven response feature was tested: isolating a host from an incident card.
+
+**Setup on the victim.** The files from [`infra/responder/`](../infra/responder/) were copied over and installed: a `responder` user with a locked password, `soc-isolate`, `soc-unisolate` and `soc-gate` in `/usr/local/sbin`, and a `sudoers.d` entry limited to the two scripts. A dedicated ed25519 key was made on `soc-siem` and added to `/home/responder/.ssh/authorized_keys` with `restrict`, `from="192.168.56.10"` and `command="/usr/local/sbin/soc-gate"`. The bot runs on `soc-siem`, so that is the address the victim sees (the README's old example said `.1`).
+
+**Checks, in order.**
+
+1. From `soc-siem` the key ran `soc-unisolate` (`released`), refused `id` (`denied`) and refused a shell (`denied`, no PTY).
+2. `soc-isolate` was run from `soc-siem`. From `soc-attacker`, TCP to the victim's port 22 timed out. From `soc-siem` it still connected. `soc-unisolate` then restored it.
+3. The three `RESPONDER_*` settings were added to the bot's `.env` (`RESPONDER_HOSTS=soc-victim=192.168.56.20`, the key path and the known-hosts path) and the bot was restarted.
+4. On the real Masquerading card (#100) the Isolate button posted "Isolate completed for soc-victim" with the script output, and the audit channel logged `device.isolate`. `/unisolate host:soc-victim reason:... incident:100` released it, logged as `device.unisolate`.
+
+**What went wrong on the way.**
+
+- Files copied from Windows had CRLF line endings, which made `visudo` report a syntax error at the end of the rule. `sed -i 's/\r$//'` on the victim fixed it. A new `.gitattributes` line forces LF for `responder.sudoers`, and a test fails if any responder file has CRLF.
+- Ping still reaches an isolated host, because UFW accepts ICMP echo by default. A ping is therefore not a valid test; use a TCP connection (`nc -zv -w 3 <host> 22`). Closing the ICMP gap is optional.
+- The `.env` had no `RESPONDER_*` lines at all, so `sed` changed nothing; the lines had to be appended.
+- Regenerating the SSH key without updating `authorized_keys` leaves the old key installed. The two must match.
+- `/unisolate` requires an incident number, and the host name must match the inventory exactly. `soc-vict` was refused, which is the allow-list doing its job.
+- A second Caldera agent appeared on the victim after the isolation test, so every step ran twice. Check `pgrep -a splunkd` shows one line before each operation.
+
+## 21. Next
 
 - Run the bot as a systemd service on `soc-siem` instead of by hand.
 - Put the alert throttle back to its normal value (30 minutes) after demos.
@@ -434,7 +456,6 @@ A full run from a cold start, done for a demo, showed what a restart of the lab 
 - GitHub Actions for the tests and lint.
 - Watch the host's memory: the SIEM crashes and the victim's failed starts point to Windows running out of commit (see section 16). Cap WSL's memory with a `.wslconfig` and keep the page file large.
 - Add detection 3 (shell history cleared, T1070.003) and decide whether to tighten the discovery threshold.
-- Create the `responder` user on the victim from [`infra/responder/`](../infra/responder/); run the bot in real mode; test isolation from a snapshot first.
 - Show a friendly message for a second Acknowledge, and update the card after it.
 - Try the `op run` setup with a real 1Password item and the systemd credentials on `soc-siem`.
 - Review and merge the `web-app` branch.
