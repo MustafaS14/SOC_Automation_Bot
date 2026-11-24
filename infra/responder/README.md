@@ -23,6 +23,8 @@ visudo -cf /etc/sudoers.d/responder
 
 Edit `MGMT_IP` in `soc-isolate` if the SIEM address is not `192.168.56.10`.
 
+> **Copying from Windows.** The scripts and `responder.sudoers` must have LF line endings. With CRLF, `visudo` reports a syntax error at the end of the rule and the shell scripts fail on their first line. The repository forces LF through `.gitattributes`, but a copy made from an older checkout can still carry CRLF. If `visudo -cf` complains, run `sed -i 's/\r$//' soc-isolate soc-unisolate soc-gate responder.sudoers` on the victim and install the files again.
+
 ## Restrict the key
 
 Generate a dedicated key on the bot host (never reuse a personal key):
@@ -34,11 +36,11 @@ ssh-keygen -t ed25519 -f ~/.ssh/soc_bot_responder -C soc-bot
 Add its public key to `/home/responder/.ssh/authorized_keys` as a single line with these options in front:
 
 ```
-restrict,from="192.168.56.1",command="/usr/local/sbin/soc-gate" ssh-ed25519 AAAA... soc-bot
+restrict,from="192.168.56.10",command="/usr/local/sbin/soc-gate" ssh-ed25519 AAAA... soc-bot
 ```
 
 - `restrict` turns off PTY allocation, port, agent and X11 forwarding and `~/.ssh/rc`. It needs OpenSSH 7.2 or newer. On older versions use `no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-user-rc` instead.
-- `from="..."` limits the key to the bot host's address. Replace `192.168.56.1` with the address the victim sees for the bot.
+- `from="..."` limits the key to the bot host's address. In this lab the bot runs on `soc-siem`, so the victim sees `192.168.56.10`. If the bot ran on your PC instead, the victim would see the host-only address of the PC (`192.168.56.1`).
 - `command="..."` runs `soc-gate` whatever the client asks for. The gate compares `SSH_ORIGINAL_COMMAND` with the two allowed strings, which are the same ones hard-coded in `soc_bot/clients/ssh_response.py`.
 
 Permissions:
