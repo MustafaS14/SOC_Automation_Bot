@@ -11,7 +11,7 @@ from aiohttp import web
 from discord import app_commands
 from discord.ext import commands
 
-from .. import webhook
+from .. import first_response, webhook
 from ..ai import Assistant, ToolContext, build_assistant
 from ..audit import AuditLogger
 from ..clients import (
@@ -171,6 +171,28 @@ class SocBot(commands.Bot):
             await channel.send(embed=embed, view=alert_view(incident.id))
             if self.assistant is not None:
                 self._spawn(self._post_triage_note(incident, channel))
+            if incident.severity in self.settings.first_response_severities:
+                self._spawn(self._first_response(incident, channel))
+
+    async def _first_response(self, incident: Incident, channel: discord.abc.Messageable) -> None:
+        """Read-only hunts and IP enrichment for a new alert. Failures never affect the alert itself."""
+        try:
+            result = await first_response.run(incident, splunk=self.splunk, enrichment=self.enrichment)
+            if result.empty:
+                return
+            failed = any(h.rows is None for h in result.hunts) or bool(result.enrich_error)
+            entry = self.audit_log.record(
+                actor="first-response", actor_id=0, action="auto.first_response", target=f"#{incident.id}",
+                outcome="partial" if failed else "success",
+                hunts=",".join(h.name for h in result.hunts) or None,
+                verdict=result.report.verdict if result.report else None,
+            )
+            if self.hec:
+                self._spawn(self.hec.send(entry))
+            await self.store.add_comment(incident.id, "first-response", first_response.summary(result))
+            await channel.send(embed=embeds.first_response(incident.id, result))
+        except Exception:
+            log.exception("First response for incident #%s failed", incident.id)
 
     async def _post_triage_note(self, incident: Incident, channel: discord.abc.Messageable) -> None:
         """A short AI suggestion under a new alert. Failures never affect the alert itself."""

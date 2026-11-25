@@ -54,7 +54,7 @@ class FakeChannel(discord.abc.Messageable):
 async def post(mock_mode):
     channel = FakeChannel()
     fake_bot = SimpleNamespace(
-        settings=SimpleNamespace(alert_channel_id=9, mock_mode=mock_mode),
+        settings=SimpleNamespace(alert_channel_id=9, mock_mode=mock_mode, first_response_severities=()),
         is_ready=lambda: True,
         get_channel=lambda channel_id: channel,
         assistant=None,

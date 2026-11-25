@@ -67,6 +67,18 @@ def _int_default(name: str, default: int) -> int:
     return default if value is None else value
 
 
+def _severity_list(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    wanted = {p.strip().lower() for p in raw.split(",") if p.strip()}
+    known = {s.lower(): s for s in ("High", "Medium", "Low", "Informational")}
+    unknown = wanted - known.keys()
+    if unknown:
+        raise ConfigError(f"{name} has unknown severities: {', '.join(sorted(unknown))}. Use High, Medium, Low, Informational.")
+    return tuple(s for k, s in known.items() if k in wanted)
+
+
 def _id_set(name: str) -> frozenset[int]:
     raw = os.getenv(name, "")
     try:
@@ -113,6 +125,7 @@ class Settings:
     webhook_secret: str = field(default="", repr=False)
     webhook_rate_limit: int = 30
     webhook_dedup_seconds: int = 3600  # repeats of an open incident inside this window are folded in; 0 turns it off
+    first_response_severities: tuple[str, ...] = ("High", "Medium")  # new alerts of these severities get automatic read-only lookups; empty turns it off
     api_secret: str = field(default="", repr=False)  # read-only incident API; its routes exist only when this is set
     webhook_link_hosts: tuple[str, ...] = ()
     splunk_url: str = ""
@@ -159,6 +172,7 @@ class Settings:
             webhook_port=_int_default("WEBHOOK_PORT", 8765),
             webhook_secret=secret("WEBHOOK_SECRET"),
             api_secret=secret("API_SECRET"),
+            first_response_severities=_severity_list("FIRST_RESPONSE_SEVERITIES", ("High", "Medium")),
             webhook_rate_limit=_int_default("WEBHOOK_RATE_LIMIT", 30),
             webhook_dedup_seconds=_int_default("WEBHOOK_DEDUP_SECONDS", 3600),
             webhook_link_hosts=_str_list("WEBHOOK_LINK_HOSTS"),
