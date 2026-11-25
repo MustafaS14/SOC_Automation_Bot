@@ -69,6 +69,8 @@ Settings the console needs:
 
 Do not put the API secret in a file. Either keep an `op://` reference in `.env` and start with `op run --env-file=.env -- python -m soc_web` ([secrets](secrets.md)), or type it at a hidden prompt, which keeps it in that process only. [scripts/run-live.example.ps1](../scripts/run-live.example.ps1) is a PowerShell launcher that does the second: copy it, set the two paths at the top, and run it from your own terminal. Run it with `adduser` once to create your account, then without arguments to start the console.
 
+For a ready-made launcher that needs no editing, use [scripts/start-console.ps1](../scripts/start-console.ps1): run `.\scripts\start-console.ps1` from the repo. It finds the repo itself, stops an old console on port 8000, checks that the 18765 tunnel is open, and asks for the API secret and (optionally) the Splunk token at hidden prompts. It does not create accounts; use the example launcher with `adduser` for that.
+
 Accounts are created at the command line and the password is typed at a prompt:
 
 ```
