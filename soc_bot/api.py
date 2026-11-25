@@ -16,7 +16,7 @@ from typing import Any
 
 from aiohttp import web
 
-from .audit import redact
+from .audit import redact, search as audit_search
 from .clients.base import NotFoundError
 from .models import TECHNIQUE_RE, Comment, Incident
 from .store import SEVERITIES, IncidentStore
@@ -29,6 +29,7 @@ STATUSES = tuple(_STATUS_SQL)
 MAX_LIMIT = 50
 MIN_SECRET_LENGTH = 32
 MAX_TIMELINE_SPAN = 40 * 86400  # seconds
+MAX_AUDIT_LIMIT = 200
 
 
 def _iso(value: Any) -> str | None:
@@ -68,6 +69,7 @@ def register(
     *,
     max_per_minute: int = 30,
     clock: Callable[[], float] = time.monotonic,
+    audit_path: str = "",
 ) -> None:
     if len(secret.strip()) < MIN_SECRET_LENGTH:
         # An empty secret would accept anyone (compare_digest(b"", b"") is True), a short one is guessable.
@@ -143,8 +145,25 @@ def register(
             return _error(404, "not found")
         return web.json_response(incident_json(inc, comments=True))
 
+    async def audit(request: web.Request) -> web.Response:
+        """The bot's own audit entries (Discord actions such as isolate), newest first, so the console can show them."""
+        q = request.query
+        try:
+            offset, limit = max(0, int(q.get("offset", "0"))), int(q.get("limit", "50"))
+        except ValueError:
+            return _error(400, "offset and limit must be whole numbers")
+        found, total = audit_search(
+            audit_path, actor=q.get("actor", "")[:64], action=q.get("action", "")[:64], outcome=q.get("outcome", "")[:16],
+            channel=q.get("channel", "")[:16], since=q.get("since", "")[:10], until=q.get("until", "")[:10],
+            denied_only=q.get("denied") == "1", offset=offset, limit=max(1, min(limit, MAX_AUDIT_LIMIT)),
+        )
+        safe = [{k: (redact(v) if isinstance(v, str) else v) for k, v in e.items()} for e in found]
+        return web.json_response({"entries": safe, "total": total})
+
     # No add_post / add_put / add_delete anywhere: those methods answer 405.
     app.router.add_get("/api/incidents", guard(list_incidents))
     app.router.add_get("/api/incidents/{incident_id}", guard(one_incident))
     app.router.add_get("/api/counts", guard(counts))
     app.router.add_get("/api/timeline", guard(timeline))
+    if audit_path:
+        app.router.add_get("/api/audit", guard(audit))

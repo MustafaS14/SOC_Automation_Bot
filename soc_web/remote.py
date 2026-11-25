@@ -108,6 +108,17 @@ class RemoteIncidentStore:
         except (KeyError, TypeError, ValueError) as exc:
             raise APIError(SERVICE, 502, "The incident API sent an unexpected answer.") from exc
 
+    async def audit(self, *, offset: int = 0, limit: int = 50, **filters: Any) -> tuple[list[dict[str, Any]], int]:
+        """The bot's audit entries (what happened in Discord), newest first. Older bots without the route give a clear error."""
+        try:
+            body = await self._get("/api/audit", offset=offset, limit=limit, **{k: v for k, v in filters.items() if v})
+        except NotFoundError as exc:
+            raise APIError(SERVICE, 404, "soc-siem runs an older bot without the audit route. Update and restart it.") from exc
+        try:
+            return [e for e in body["entries"] if isinstance(e, dict)], int(body["total"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise APIError(SERVICE, 502, "The incident API sent an unexpected answer.") from exc
+
     # ---- writes: refused, and never sent anywhere ------------------------------------------------------------
 
     async def create(self, *args: Any, **kwargs: Any) -> Incident:

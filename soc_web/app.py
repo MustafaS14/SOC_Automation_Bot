@@ -65,6 +65,7 @@ STATUSES = ("open", "new", "active", "closed", "all")
 CLOSE_LABELS = {"true_positive": "True positive", "false_positive": "False positive", "benign": "Benign"}
 MAX_HUNT_ROWS = 100
 AUDIT_PAGE = 50
+AUDIT_MERGE_CAP = 200  # most entries read from each side when merging the console's log with the bot's
 ORDER_LABELS = {"newest": "Newest first", "oldest": "Oldest first", "updated": "Recently updated",
                 "severity": "Most severe first"}
 AUDIT_CHANNELS = ("web", "discord", "cli")
@@ -708,8 +709,7 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
                 return recent_results.get(g.user.id, tier, "enrich") or pagecontext.only_name(PAGE_NAMES[endpoint])
             if endpoint == "audit_view":
                 filters, denied_only, page = audit_query(query)
-                found, total = search(backends.settings.audit_log_path, denied_only=denied_only,
-                                      offset=(page - 1) * AUDIT_PAGE, limit=AUDIT_PAGE, **filters)
+                found, total, _ = audit_entries(filters, denied_only, page)
                 shown = {k: v for k, v in {**filters, "denied": "1" if denied_only else ""}.items() if v}
                 return pagecontext.audit_rows([audit_row(e) for e in found], total, shown)
         except NotFoundError:
@@ -813,19 +813,36 @@ def create_app(web: WebSettings, backends: Backends, users: UserStore) -> Flask:
 
     # ---- audit log ----------------------------------------------------------------------------------------
 
+    def audit_entries(filters: dict[str, str], denied_only: bool, page: int) -> tuple[list[dict[str, Any]], int, str]:
+        """This console's entries, plus (in live mode) the bot's, so isolate and the other Discord actions show up.
+        Both lists are newest first; the merge reads up to AUDIT_MERGE_CAP of each, so very deep pages stop there."""
+        offset = (page - 1) * AUDIT_PAGE
+        if not read_only:
+            found, total = search(backends.settings.audit_log_path, denied_only=denied_only, offset=offset,
+                                  limit=AUDIT_PAGE, **filters)
+            return found, total, ""
+        want = min(offset + AUDIT_PAGE, AUDIT_MERGE_CAP)
+        mine, mine_total = search(backends.settings.audit_log_path, denied_only=denied_only, limit=want, **filters)
+        try:
+            theirs, their_total = call(store.audit(limit=want, denied="1" if denied_only else "", **filters))
+        except HANDLED as exc:
+            log.warning("Could not read the bot's audit entries: %s", exc)
+            return mine[offset:offset + AUDIT_PAGE], mine_total, "The bot's audit entries could not be read (soc-siem offline or not updated), so only this console's own entries are shown."
+        merged = sorted(mine + theirs, key=lambda e: str(e.get("ts", "")), reverse=True)
+        return merged[offset:offset + AUDIT_PAGE], mine_total + their_total, ""
+
     @app.get("/audit")
     @needs(Permission.ADMIN)
     def audit_view():
         filters, denied_only, page = audit_query(request.args)
-        found, total = search(backends.settings.audit_log_path, denied_only=denied_only,
-                              offset=(page - 1) * AUDIT_PAGE, limit=AUDIT_PAGE, **filters)
+        found, total, warning = audit_entries(filters, denied_only, page)
         rows = [audit_row(e) for e in found]
         shown = {k: v for k, v in {**filters, "denied": "1" if denied_only else ""}.items() if v}
         audit("audit.view", "web", count=len(rows), page=page, **{f"filter_{k}": v for k, v in shown.items()})
         return render_template(
             "audit.html", rows=rows, total=total, page=page, pages=max(1, -(-total // AUDIT_PAGE)), shown=shown,
             filters=filters, denied_only=denied_only, channels=AUDIT_CHANNELS, outcomes=AUDIT_OUTCOMES,
-            forwarding=backends.hec is not None,
+            forwarding=backends.hec is not None, warning=warning, live=read_only,
         )
 
     return app

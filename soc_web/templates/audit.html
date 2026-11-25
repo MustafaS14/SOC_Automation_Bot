@@ -21,6 +21,8 @@
   </form>
 </div>
 <div class="panel">
+  {% if warning %}<p class="small"><strong>{{ warning }}</strong></p>{% endif %}
+  {% if live and not warning %}<p class="muted small">Live mode: this page merges the console's own entries with the bot's on soc-siem (Discord actions such as isolate).</p>{% endif %}
   <p class="muted">{{ total }} matching {{ 'entry' if total == 1 else 'entries' }}, newest first, page {{ page }} of {{ pages }}.
     {% if forwarding %}Every entry is also sent to Splunk, and <strong>the Splunk copy is the authoritative one</strong>, because this file can be edited by anyone with access to the server.
     {% else %}Entries are <strong>not</strong> forwarded to Splunk (no HEC configured), so this file is the only copy and anyone with access to the server could change it.{% endif %}</p>
