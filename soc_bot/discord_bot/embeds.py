@@ -193,6 +193,39 @@ def ai_answer(question: str, text: str) -> discord.Embed:
     return embed
 
 
+def first_response(incident_id: int, result: Any) -> discord.Embed:
+    embed = discord.Embed(
+        title=f"First response for #{incident_id}", color=discord.Color.blurple(),
+        description=f"Read-only lookups, last {result.window}.",
+    )
+    for hunt in result.hunts:
+        if hunt.rows is None:
+            embed.add_field(name=_t(hunt.label, 250), value=f"Search failed ({md(hunt.error, 100)}).", inline=False)
+        elif not hunt.rows:
+            embed.add_field(name=_t(hunt.label, 250), value="No events found.", inline=False)
+        else:
+            lines = []
+            for row in hunt.rows[:3]:
+                raw = str(row.get("_raw", "")).replace("\n", " ").replace("```", "'''")
+                lines.append(f"{row.get('_time', '')} {raw}"[:200])
+            body = "\n".join(lines)
+            embed.add_field(
+                name=_t(f"{hunt.label} ({len(hunt.rows)})", 250), value=f"```\n{_t(body, 900)}\n```", inline=False,
+            )
+    report = result.report
+    if report is not None:
+        parts = [f"**{report.verdict}**"]
+        if report.abuse_score is not None:
+            parts.append(f"AbuseIPDB {report.abuse_score}/100")
+        if report.vt_malicious is not None:
+            parts.append(f"VirusTotal {report.vt_malicious} malicious")
+        embed.add_field(name=f"Source IP {md(report.ip, 60)}", value=" - ".join(parts), inline=False)
+    elif result.enrich_error:
+        embed.add_field(name="Source IP", value=f"Enrichment failed ({md(result.enrich_error, 100)}).", inline=False)
+    embed.set_footer(text="Automatic and read-only. A person decides and acts.")
+    return embed
+
+
 def ai_note(incident_id: int, text: str) -> discord.Embed:
     embed = discord.Embed(title=f"Triage note for #{incident_id}", description=md(text, 3500), color=discord.Color.blurple())
     embed.set_footer(text="Suggestion only. A person decides and acts.")
