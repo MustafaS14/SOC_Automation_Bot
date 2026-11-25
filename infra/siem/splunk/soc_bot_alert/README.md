@@ -33,7 +33,7 @@ Splunk runs an alert action once and never retries it, so a card used to be lost
 
 Limits to know: the queue is only emptied when another alert fires, so a card can be late but is not lost, and it can be very late on a quiet lab. A late card can also double up when the bot had accepted the alert but the answer was lost; the bot merges the repeat into the open incident. Splunk's per-host throttle (30 minutes) still applies to the alert, not to the re-send.
 
-To see the queue on soc-siem: `docker exec splunk ls /opt/splunk/etc/apps/soc_bot_alert/local/spool` (use your container's name).
+To see the queue on soc-siem: `docker exec -u splunk splunk ls /opt/splunk/etc/apps/soc_bot_alert/local/spool` (use your container's name). The folder is readable only by the `splunk` user, so without `-u splunk` you get "Permission denied".
 
 ## Install on soc-siem
 
