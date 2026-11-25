@@ -216,3 +216,21 @@ async def test_ack_notice_escapes_the_actor_name(store, alert_env):
     assert "acknowledged by" in text and "\\[click\\]" in text
     assert (await store.get(1)).assignee == EVIL_NAME  # stored as typed; escaped only when rendered
     assert "[click](" not in embeds.incident_detail(await store.get(1)).fields[2].value
+
+
+def _buttons(**fields):
+    from soc_bot.models import Incident
+
+    incident = Incident(id=7, rule=fields.pop("rule", "Discovery"), severity="High", status="New", **fields)
+    return [c.item.custom_id.split(":")[1] for c in alert_view(incident).children]
+
+
+def test_alert_buttons_fit_the_alert():
+    assert _buttons(host="soc-victim", src_ip="1.2.3.4") == ["ack", "enrich", "isolate"]
+    assert _buttons(host="soc-victim") == ["ack", "isolate"]
+    assert _buttons(src_ip="1.2.3.4") == ["ack", "enrich"]
+    assert _buttons() == ["ack"]
+
+
+def test_heartbeat_alert_never_offers_isolate():
+    assert _buttons(rule="Heartbeat: no pipeline heartbeat from a host for 15 minutes", host="soc-victim") == ["ack"]
