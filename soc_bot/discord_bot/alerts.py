@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import discord
 
+from ..models import Incident
 from ..rbac import Permission
 from . import embeds
 from .checks import ensure
@@ -75,8 +76,25 @@ class AlertButton(
         await bot.handle_error(interaction, f"alert.{self.action}", error)
 
 
-def alert_view(incident_id: int) -> discord.ui.View:
+# Alerts about the pipeline itself say nothing is wrong with the host's behaviour, so isolating it would be a mistake.
+NO_ISOLATE_RULE_PREFIXES = ("heartbeat:",)
+
+
+def actions_for(incident: Incident) -> list[str]:
+    """Only the buttons that can do something for this alert."""
+    actions = ["ack"]
+    if incident.src_ip:
+        actions.append("enrich")
+    if incident.host and not incident.rule.lower().startswith(NO_ISOLATE_RULE_PREFIXES):
+        actions.append("isolate")
+    return actions
+
+
+def alert_view(target: int | Incident) -> discord.ui.View:
+    """Buttons for an alert. An incident id alone gives every button; an Incident gives the ones that fit it."""
+    incident_id = target if isinstance(target, int) else target.id
+    actions = list(_ACTIONS) if isinstance(target, int) else actions_for(target)
     view = discord.ui.View(timeout=None)
-    for action in _ACTIONS:
+    for action in actions:
         view.add_item(AlertButton(action, incident_id))
     return view

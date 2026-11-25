@@ -168,7 +168,7 @@ class SocBot(commands.Bot):
             embed = embeds.incident_detail(incident)
             if self.settings.mock_mode:
                 embed.set_footer(text="MOCK MODE")
-            await channel.send(embed=embed, view=alert_view(incident.id))
+            await channel.send(embed=embed, view=alert_view(incident))
             if self.assistant is not None:
                 self._spawn(self._post_triage_note(incident, channel))
             if incident.severity in self.settings.first_response_severities:

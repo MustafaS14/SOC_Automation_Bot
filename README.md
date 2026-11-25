@@ -39,7 +39,7 @@ To rebuild the lab and the bot from scratch, follow the documents in this order:
 
 | Area | What it does |
 |---|---|
-| **Alert intake** | Splunk alert webhook, shared-secret checked and validated, stored in SQLite, posted as an embed with Acknowledge, Enrich and Isolate buttons |
+| **Alert intake** | Splunk alert webhook, shared-secret checked and validated, stored in SQLite, posted as an embed with the buttons that fit it: Acknowledge always, Enrich when there is a source IP, Isolate when there is a host (never on a heartbeat alert) |
 | **Triage** | List, show, comment on and close incidents (`true_positive`, `false_positive`, `benign`) |
 | **Hunting** | `/hunt` runs predefined read-only SPL templates through the Splunk REST API. Chat input only fills validated parameters |
 | **Enrichment** | IP reputation from AbuseIPDB and VirusTotal. Private IPs are never sent to third parties. A failed lookup yields an `Incomplete` verdict, never `Clean` |
