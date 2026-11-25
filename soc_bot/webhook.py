@@ -121,6 +121,7 @@ def create_app(
     clock: Callable[[], float] = time.monotonic,
     api_secret: str = "",
     dedup_window: float = 0,
+    audit_path: str = "",
 ) -> web.Application:
     if not secret.strip():
         # compare_digest(b"", b"") is True, so an empty secret would accept anyone.
@@ -165,5 +166,5 @@ def create_app(
             raise ValueError("API_SECRET must be a different secret from WEBHOOK_SECRET.")
         from .api import register  # the /api routes exist only when an API secret is set
 
-        register(app, store, api_secret, max_per_minute=max_per_minute, clock=clock)
+        register(app, store, api_secret, max_per_minute=max_per_minute, clock=clock, audit_path=audit_path)
     return app

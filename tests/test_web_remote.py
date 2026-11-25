@@ -1,6 +1,8 @@
 """The console reading incidents from soc-siem: the client against the real bot API, and the read-only console."""
 
 import asyncio
+import json
+import tempfile
 import threading
 
 import httpx
@@ -31,6 +33,15 @@ class FakeBot:
 
     def __init__(self, secret: str = API_SECRET):
         self.secret = secret
+        self.audit_file = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False, encoding="utf-8")
+        for e in (
+            {"ts": "2026-11-25T10:00:00+00:00", "actor": "mustafa", "action": "device.isolate", "target": "soc-victim",
+             "outcome": "success", "reason": "demo isolate token=abcdefghijklmnopqrstuvwxyz123456"},
+            {"ts": "2026-11-25T10:05:00+00:00", "actor": "mustafa", "action": "device.unisolate", "target": "soc-victim",
+             "outcome": "success"},
+        ):
+            self.audit_file.write(json.dumps(e) + "\n")
+        self.audit_file.close()
         self.loop = asyncio.new_event_loop()
         self.ready = threading.Event()
         self.thread = threading.Thread(target=self._run, daemon=True)
@@ -46,7 +57,8 @@ class FakeBot:
                                     description="whoami")
             await self.store.create(rule="Cron anomaly", severity="Low", host="soc-web")
             await self.store.add_comment(1, "analyst", "first look")
-            app = create_bot_app(self.store, "w" * 40, _noop, api_secret=self.secret)
+            app = create_bot_app(self.store, "w" * 40, _noop, api_secret=self.secret,
+                                  audit_path=self.audit_file.name)
             self.runner = web.AppRunner(app)
             await self.runner.setup()
             site = web.TCPSite(self.runner, "127.0.0.1", 0)
@@ -315,3 +327,42 @@ def test_settings_api_secret_rules():
 
 def test_the_read_only_message_is_what_the_user_sees():
     assert "read-only" in READ_ONLY
+
+
+# ---- the bot's audit entries on the console's Audit page ---------------------------------------------------------
+
+
+def test_the_audit_page_shows_the_bots_discord_actions_in_live_mode(remote_stack):
+    app, _, _ = remote_stack
+    client, _ = login(app, "admin")
+    page = client.get("/audit").get_data(as_text=True)
+    assert "device.isolate" in page and "device.unisolate" in page and "soc-victim" in page
+    assert "discord" in page
+    assert "abcdefghijklmnopqrstuvwxyz123456" not in page  # redacted on the bot side or never shown
+
+
+def test_the_audit_page_filters_apply_to_the_bots_entries(remote_stack):
+    app, _, _ = remote_stack
+    client, _ = login(app, "admin")
+    page = client.get("/audit?action=unisolate").get_data(as_text=True)
+    assert "device.unisolate" in page and "device.isolate<" not in page
+
+
+def test_the_audit_api_needs_the_secret_and_is_read_only(bot):
+    base = bot.url + "/api/audit"
+    assert httpx.get(base).status_code == 401
+    ok = httpx.get(base, headers={"X-Api-Secret": API_SECRET})
+    assert ok.status_code == 200 and ok.json()["total"] == 2
+    assert ok.json()["entries"][0]["action"] == "device.unisolate"  # newest first
+    assert "abcdefghijklmnopqrstuvwxyz123456" not in ok.text
+    assert httpx.post(base, headers={"X-Api-Secret": API_SECRET}).status_code == 405
+    assert httpx.get(base + "?limit=x", headers={"X-Api-Secret": API_SECRET}).status_code == 400
+
+
+def test_the_audit_page_still_works_when_the_bot_is_offline(remote_stack):
+    app, _, bot = remote_stack
+    client, _ = login(app, "admin")
+    bot.stop()
+    page = client.get("/audit")
+    assert page.status_code == 200
+    assert "could not be read" in page.get_data(as_text=True)

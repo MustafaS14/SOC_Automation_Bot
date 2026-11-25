@@ -148,6 +148,7 @@ class SocBot(commands.Bot):
             max_per_minute=s.webhook_rate_limit,
             link_hosts=s.alert_link_hosts,
             api_secret=s.api_secret,
+            audit_path=s.audit_log_path,
             dedup_window=s.webhook_dedup_seconds,
         )
         self._web_runner = web.AppRunner(app)
