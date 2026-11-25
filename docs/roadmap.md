@@ -9,7 +9,7 @@ Done: `soc-siem` with Splunk and Logstash, the victim's auditd logs shipped thro
 Still to do:
 
 1. ~~Create the `responder` user on the victim, restrict its SSH key with a forced command, and test isolation~~ **Done**: the key is limited to two exact commands (`restrict`, `from=` the SIEM, forced `soc-gate`), and the Isolate button and `/unisolate` were proven on a real card from Discord, with both actions in the audit channel. The firewall blocks TCP from the attacker while the SIEM can still reach the host. Ping still gets through an isolated host (UFW accepts ICMP echo by default); close that if it matters.
-2. Add a retry path for the alert action: a card is lost today when the bot is down at the moment an alert fires.
+2. ~~Add a retry path for the alert action~~ **Done**: the alert action retries a temporary failure (bot down, restarting, 429 or 5xx) four times with a short wait, never retries a rejection (400, 401, 403), and queues what it still cannot deliver in `local/spool` on soc-siem. The queue is re-sent, oldest first, the next time any alert fires, capped at 50 files and 24 hours. A queued card is late rather than lost, but only once another alert fires; a scheduled re-send is still open ([soc_bot_alert](../infra/siem/splunk/soc_bot_alert/README.md)).
 3. Record a short demo: attack, alert in Discord, triage, isolation.
 
 ## Phase 2: make it look like real SOC work
@@ -21,7 +21,7 @@ Still to do:
 | More scenarios, each with a write-up and a detection: SSH brute force, persistence through cron or a new user, privilege escalation attempt | A small library beats one demo |
 | Alert noise control: ~~merge repeated alerts into one incident~~ **Done** (repeats fold into the open incident for an hour; `close-stale` sweeps untouched incidents after 24 hours, see [detections.md](detections.md#keeping-the-noise-down-three-layers)). Still open: suppress known-benign activity, raise severity on repetition | False positives are the everyday problem in a SOC; show alert counts before and after |
 | Metrics from the incident store: time to detect and time to respond, shown in a `/stats` command or a dashboard | Managers ask for these numbers |
-| ~~A heartbeat alert: a scheduled search that fires when a host stops sending~~ **Done**: a cron heartbeat on the victim and a Splunk search that fires after 15 silent minutes, proven by stopping Filebeat for 15 minutes and getting card #105 ([detections.md](detections.md), section 4). The console shows it live as a floating pulse widget ([web-console.md](web-console.md)) | A stalled Filebeat or Logstash looks the same as a quiet host, and the alert action does not retry, so silent pipeline failures go unnoticed |
+| ~~A heartbeat alert: a scheduled search that fires when a host stops sending~~ **Done**: a cron heartbeat on the victim and a Splunk search that fires after 15 silent minutes, proven by stopping Filebeat for 15 minutes and getting card #105 ([detections.md](detections.md), section 4). The console shows it live as a floating pulse widget ([web-console.md](web-console.md)) | A stalled Filebeat or Logstash looks the same as a quiet host, so silent pipeline failures go unnoticed |
 
 ## Phase 3: automation and reporting
 

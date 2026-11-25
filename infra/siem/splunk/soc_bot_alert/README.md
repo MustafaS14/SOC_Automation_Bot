@@ -12,7 +12,7 @@ saved search fires -> soc_bot_webhook.py -> POST http://172.18.0.1:8765/webhook/
 |---|---|
 | `default/app.conf` | Declares the app (hidden from the Splunk menu). |
 | `default/alert_actions.conf` | Registers the `soc_bot_webhook` action (`is_custom = 1`, JSON payload, Python 3). |
-| `bin/soc_bot_webhook.py` | Reads the alert JSON from stdin and forwards `search_name`, `result` and `results_link` to the bot. Exits 1 on any error so Splunk records the failure. |
+| `bin/soc_bot_webhook.py` | Reads the alert JSON from stdin and forwards `search_name`, `result` and `results_link` to the bot. Retries temporary failures and queues what it cannot deliver (see below). Exits 1 on any failure so Splunk records it. |
 | `metadata/default.meta` | `export = system` so the `search` app can see the action. Without it the action is "not found". |
 
 Two files are **not** in the repo on purpose, because they are specific to one lab and one is a secret:
@@ -21,6 +21,19 @@ Two files are **not** in the repo on purpose, because they are specific to one l
 |---|---|
 | `local/url` | The webhook URL, for example `http://172.18.0.1:8765/webhook/splunk`. |
 | `local/secret` | The shared secret, the same value as `WEBHOOK_SECRET` in the bot's `.env`. Sent as the `X-Webhook-Secret` header. |
+
+## Retries and the queue
+
+Splunk runs an alert action once and never retries it, so a card used to be lost when the bot was down at that moment. The script now handles that itself:
+
+- A **temporary** failure (the bot is unreachable, restarting, rate limiting with 429, or answering 5xx) is retried 4 times, waiting 2, 5 and 15 seconds between tries.
+- A **rejection** (400, 401, 403 and the like) is never retried and never queued, because the same request would fail again. Check the secret and the payload instead.
+- If the bot is still unreachable after the retries, the alert is written to `local/spool/` (one small JSON file each, readable by the `splunk` user only, holding the alert and never the secret) and the action exits 1 so Splunk logs the failure.
+- At the start of every run the script first re-sends the queued alerts, oldest first, up to 10 a run, and stops at the first one that still fails. Queued alerts older than 24 hours are dropped, and the queue keeps at most 50 files.
+
+Limits to know: the queue is only emptied when another alert fires, so a card can be late but is not lost, and it can be very late on a quiet lab. A late card can also double up when the bot had accepted the alert but the answer was lost; the bot merges the repeat into the open incident. Splunk's per-host throttle (30 minutes) still applies to the alert, not to the re-send.
+
+To see the queue on soc-siem: `docker exec splunk ls /opt/splunk/etc/apps/soc_bot_alert/local/spool` (use your container's name).
 
 ## Install on soc-siem
 
