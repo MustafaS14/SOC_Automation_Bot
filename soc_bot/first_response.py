@@ -22,6 +22,11 @@ IP_HUNT = "ip_activity"
 MAX_COMMENT_ROWS = 5
 
 
+def row_text(row: dict[str, Any]) -> str:
+    """The command for a hunt row that has one, otherwise the raw event."""
+    return str(row.get("cmd") or row.get("_raw") or "").replace("\n", " ")
+
+
 @dataclass
 class HuntOutcome:
     name: str
@@ -36,10 +41,11 @@ class FirstResponse:
     hunts: list[HuntOutcome] = field(default_factory=list)
     report: IpReport | None = None
     enrich_error: str | None = None
+    notes: list[str] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
-        return not self.hunts and self.report is None and self.enrich_error is None
+        return not self.hunts and self.report is None and self.enrich_error is None and not self.notes
 
 
 async def _hunt(splunk: Any, name: str, label: str, target: str, window: str) -> HuntOutcome:
@@ -56,6 +62,8 @@ async def _hunt(splunk: Any, name: str, label: str, target: str, window: str) ->
 
 async def run(incident: Incident, *, splunk: Any, enrichment: Any, window: str = WINDOW) -> FirstResponse:
     result = FirstResponse(window=window)
+    if splunk is None and (incident.host or incident.src_ip):
+        result.notes.append("Splunk is not configured, so the hunts were skipped.")
     if splunk is not None and incident.host:
         result.hunts.append(await _hunt(splunk, HOST_HUNT, "Commands on host", incident.host, window))
     if incident.src_ip:
@@ -75,14 +83,14 @@ async def run(incident: Incident, *, splunk: Any, enrichment: Any, window: str =
 def summary(result: FirstResponse) -> str:
     """Plain-text version stored as an incident comment (also shown in the web console)."""
     lines = [f"Automatic first response (last {result.window}, read-only):"]
+    lines.extend(f"- {note}" for note in result.notes)
     for hunt in result.hunts:
         if hunt.rows is None:
             lines.append(f"- {hunt.label}: search failed ({hunt.error}).")
             continue
         lines.append(f"- {hunt.label}: {len(hunt.rows)} event(s).")
         for row in hunt.rows[:MAX_COMMENT_ROWS]:
-            raw = str(row.get("_raw", "")).replace("\n", " ")[:160]
-            lines.append(f"    {row.get('_time', '')} {raw}".rstrip())
+            lines.append(f"    {row.get('_time', '')} {row_text(row)[:160]}".rstrip())
     if result.report is not None:
         report = result.report
         parts = [f"verdict {report.verdict}"]
