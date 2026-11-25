@@ -20,7 +20,9 @@ class Hunt:
 HUNTS = {
     "host_commands": Hunt(
         "Commands executed on a host (auditd)",
-        'search index=linux host="{target}" exec_cmd | table _time host _raw | head 20',
+        'search index=linux host="{target}" type=EXECVE'
+        ' | eval cmd=trim(a0." ".coalesce(a1,"")." ".coalesce(a2,"")." ".coalesce(a3,"")." ".coalesce(a4,"")." ".coalesce(a5,""))'
+        ' | table _time host cmd | head 20',
         "host",
     ),
     "ip_activity": Hunt(

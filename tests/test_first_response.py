@@ -160,3 +160,17 @@ async def test_first_response_never_raises():
     bot.store.add_comment = boom
     await SocBot._first_response(bot, incident(), chan)
     assert not chan.sent
+
+
+async def test_summary_and_card_show_the_command_not_the_raw_line():
+    rows = [{"_time": "2026-11-25 15:43:22.563", "host": "soc-victim", "cmd": "useradd -M soctest", "_raw": "type=EXECVE"}]
+    result = await first_response.run(incident(src_ip=None), splunk=FakeSplunk(rows=rows), enrichment=None)
+    assert "useradd -M soctest" in first_response.summary(result)
+    assert "useradd -M soctest" in embeds.first_response(7, result).fields[0].value
+
+
+async def test_missing_splunk_is_stated_not_silent():
+    result = await first_response.run(incident(), splunk=None, enrichment=FakeEnrichment())
+    assert not result.empty and result.notes
+    assert "not configured" in first_response.summary(result)
+    assert any(f.name == "Note" for f in embeds.first_response(7, result).fields)

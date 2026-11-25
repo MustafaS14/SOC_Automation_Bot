@@ -206,12 +206,14 @@ def first_response(incident_id: int, result: Any) -> discord.Embed:
         else:
             lines = []
             for row in hunt.rows[:3]:
-                raw = str(row.get("_raw", "")).replace("\n", " ").replace("```", "'''")
-                lines.append(f"{row.get('_time', '')} {raw}"[:200])
+                raw = str(row.get("cmd") or row.get("_raw") or "").replace("\n", " ").replace("```", "'''")
+                lines.append(f"{str(row.get('_time', ''))[:19]} {raw}"[:200])
             body = "\n".join(lines)
             embed.add_field(
                 name=_t(f"{hunt.label} ({len(hunt.rows)})", 250), value=f"```\n{_t(body, 900)}\n```", inline=False,
             )
+    for note in result.notes:
+        embed.add_field(name="Note", value=md(note, 300), inline=False)
     report = result.report
     if report is not None:
         parts = [f"**{report.verdict}**"]

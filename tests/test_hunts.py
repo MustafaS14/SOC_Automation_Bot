@@ -7,6 +7,7 @@ from soc_bot.validators import ValidationError
 def test_host_hunt_fills_validated_target():
     spl, earliest = hunts.build("host_commands", "1h", "SOC-Victim")
     assert 'host="soc-victim"' in spl and earliest == "-1h"
+    assert "type=EXECVE" in spl and "table _time host cmd" in spl
 
 
 def test_ip_hunt_normalises_ip():
