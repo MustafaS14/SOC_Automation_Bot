@@ -33,6 +33,7 @@ Still to do:
 | Forward the bot's and the console's audit logs to Splunk (`index=soc_audit`) as one tamper-resistant copy (the console's Audit page already merges both through the bot API) | Analysts see every action in one place |
 | Show only the buttons that fit each alert type (a heartbeat card should not offer Isolate) | Fewer wrong clicks |
 | Match source IPs and file hashes against a free threat-intel feed | Raises severity automatically on a hit |
+| Add a network sensor (NDR): Suricata or Zeek on `soc-siem` or a small sensor VM watching the lab network (192.168.56.0/24), shipped to Splunk as a `network` index. Start with three detections that match the Caldera scenarios: SSH brute force seen as many connections to port 22, agent beaconing to Caldera (192.168.56.30:8888), and a port scan from `soc-attacker`. Then correlate by IP with the host logs, so the first-response card can show network activity next to the host commands | Adds a second data source next to the endpoint logs, sees what an attacker cannot hide on a host, and turns the project from a mini EDR into an EDR plus NDR pipeline with correlation |
 
 ## Phase 4: larger extensions (only if the rest is done)
 

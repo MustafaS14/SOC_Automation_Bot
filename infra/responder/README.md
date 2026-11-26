@@ -66,3 +66,5 @@ Connect once interactively so the victim's host key lands in `known_hosts`. The 
 
 - `soc-unisolate` assumes `ufw` is normally disabled on the victim, as on a default Ubuntu install. If you keep it enabled, change the script to restore your normal rules.
 - `soc-isolate` runs `ufw --force reset`, which also removes any rules you added by hand.
+- `soc-isolate` also blocks ping (ICMP echo) from everyone except the SIEM, with a small `SOC_ISOLATE` chain in iptables, because ufw accepts echo requests before it looks at its own rules. `soc-unisolate` removes that chain. The chain is not saved across a reboot (the rest of the isolation is), so a host that reboots while isolated answers ping again until it is isolated once more.
+- To test an isolation, ping and a TCP connection from another machine (not the SIEM) must both fail: `ping -c 2 <host>` and `nc -zv -w 3 <host> 22`.
