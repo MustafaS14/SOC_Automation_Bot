@@ -1,7 +1,8 @@
 #!/bin/bash
 # Install as /usr/local/sbin/soc-isolate (root:root, 0755). Run only through the responder sudoers entry.
 # Drops all traffic except the SIEM host, so the bot can still SSH in to release the machine
-# and Filebeat can keep shipping logs.
+# and Filebeat can keep shipping logs. ufw's own before.rules accept ICMP echo ahead of any ufw rule, so a separate
+# chain drops ping from everyone except the SIEM (soc-unisolate removes it again).
 set -euo pipefail
 
 MGMT_IP="192.168.56.10"
@@ -12,4 +13,16 @@ ufw default deny outgoing
 ufw allow in from "$MGMT_IP"
 ufw allow out to "$MGMT_IP"
 ufw --force enable
-echo "isolated (management host $MGMT_IP still allowed)"
+
+if command -v iptables >/dev/null; then
+    iptables -N SOC_ISOLATE 2>/dev/null || iptables -F SOC_ISOLATE
+    iptables -A SOC_ISOLATE -s "$MGMT_IP" -j RETURN
+    iptables -A SOC_ISOLATE -p icmp --icmp-type echo-request -j DROP
+    iptables -C INPUT -j SOC_ISOLATE 2>/dev/null || iptables -I INPUT 1 -j SOC_ISOLATE
+fi
+if command -v ip6tables >/dev/null; then
+    ip6tables -N SOC_ISOLATE 2>/dev/null || ip6tables -F SOC_ISOLATE
+    ip6tables -A SOC_ISOLATE -p ipv6-icmp --icmpv6-type echo-request -j DROP
+    ip6tables -C INPUT -j SOC_ISOLATE 2>/dev/null || ip6tables -I INPUT 1 -j SOC_ISOLATE
+fi
+echo "isolated (management host $MGMT_IP still allowed; ping blocked)"

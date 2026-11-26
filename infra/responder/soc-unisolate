@@ -4,4 +4,13 @@ set -euo pipefail
 
 ufw --force reset
 ufw --force disable
+
+# Remove the ping block that soc-isolate added (ignore it if it was never there).
+for ipt in iptables ip6tables; do
+    if command -v "$ipt" >/dev/null; then
+        "$ipt" -D INPUT -j SOC_ISOLATE 2>/dev/null || true
+        "$ipt" -F SOC_ISOLATE 2>/dev/null || true
+        "$ipt" -X SOC_ISOLATE 2>/dev/null || true
+    fi
+done
 echo "released"

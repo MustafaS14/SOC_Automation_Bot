@@ -440,7 +440,7 @@ The lab was started from cold with the one-command scripts (Splunk took about 20
 **What went wrong on the way.**
 
 - Files copied from Windows had CRLF line endings, which made `visudo` report a syntax error at the end of the rule. `sed -i 's/\r$//'` on the victim fixed it. A new `.gitattributes` line forces LF for `responder.sudoers`, and a test fails if any responder file has CRLF.
-- Ping still reaches an isolated host, because UFW accepts ICMP echo by default. A ping is therefore not a valid test; use a TCP connection (`nc -zv -w 3 <host> 22`). Closing the ICMP gap is optional.
+- Ping still reaches an isolated host, because UFW accepts ICMP echo by default. A ping is therefore not a valid test; use a TCP connection (`nc -zv -w 3 <host> 22`). Closing the ICMP gap is optional. **Closed afterwards:** `soc-isolate` now drops ping from everyone except the SIEM (see `infra/responder/README.md`).
 - The `.env` had no `RESPONDER_*` lines at all, so `sed` changed nothing; the lines had to be appended.
 - Regenerating the SSH key without updating `authorized_keys` leaves the old key installed. The two must match.
 - `/unisolate` requires an incident number, and the host name must match the inventory exactly. `soc-vict` was refused, which is the allow-list doing its job.
