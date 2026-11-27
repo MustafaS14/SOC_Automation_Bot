@@ -448,7 +448,25 @@ The lab was started from cold with the one-command scripts (Splunk took about 20
 
 **Heartbeat proven.** Later the same day the pipeline-health alert was tested with a real outage. The cron heartbeat was already installed on the victim (dated 2026-11-18). Filebeat was stopped at 16:50:27 UTC, a few seconds after the last heartbeat was written. The console's pulse widget went silent and card #105, "Heartbeat: no pipeline heartbeat from a host for 15 minutes" (Medium, `soc-victim`), arrived at 17:05 UTC. Starting Filebeat again sent the queued lines and the widget recovered. Note that `grep` on `auth.log` needs `-a`, because the file contains a few non-text bytes and plain `grep` only says "binary file matches".
 
-## 21. Next
+## 21. First response, fitting buttons, ICMP block and threat-intel keys (2026-11-27)
+
+**In simple words.** After the demo the bot got smarter about what it does on its own, and the lab was re-tested end to end.
+
+- **Automatic first response.** A new High or Medium incident now gets the host hunt, the source-IP hunt and the IP lookup run for it right after the card is posted. The result appears as a second embed, is stored as a comment from `first-response`, and is audited as `auto.first_response`. The bot needed `SPLUNK_URL`, `SPLUNK_VERIFY_TLS` and `SPLUNK_TOKEN` in its `.env` (a read-only Splunk user limited to index `linux`); without them the hunts are skipped and the card says so.
+- **Readable commands.** The `exec_cmd` field is only the auditd rule key, so the hunt now builds the real command from the EXECVE fields `a0` to `a5`.
+- **Buttons that fit the alert.** Acknowledge is always there, Enrich only when there is a source IP, Isolate only when there is a host and the rule is not a heartbeat.
+- **ICMP block.** `soc-isolate` adds a `SOC_ISOLATE` chain at the top of INPUT that drops ping from everyone except the SIEM; `soc-unisolate` removes it. Proven live: attacker ping and `nc` failed while isolated, the SIEM could still ping, and both worked again after `/unisolate`. The chain does not survive a reboot.
+- **Threat-intel keys.** AbuseIPDB and VirusTotal keys were added to the bot `.env`. The verdict thresholds were tuned so that one VirusTotal engine no longer makes a clean address Suspicious (`8.8.8.8` now reads Clean).
+- **Console.** The Enrich tab needs the same two keys in the console's environment, so `scripts/start-console.ps1` now asks for them at hidden prompts.
+
+**What went wrong on the way.**
+
+- The first-response card showed no hunts because the bot `.env` had no Splunk settings.
+- Caldera's root-only abilities failed because the agent was not running as root.
+- A copy of `soc-isolate` that was never delivered to the victim made the ICMP test fail; the victim has no git, so the script is copied from the PC with `scp`.
+- The console lookup said "No threat-intel API keys configured" because only the bot, not the console, had the keys.
+
+## 22. Next
 
 - Run the bot as a systemd service on `soc-siem` instead of by hand.
 - Put the alert throttle back to its normal value (30 minutes) after demos.

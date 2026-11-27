@@ -106,6 +106,7 @@ Settings the console needs, in addition to the table in section 3:
 | `SPLUNK_URL` | `https://127.0.0.1:18089` |
 | `SPLUNK_TOKEN` | the read-only token |
 | `SPLUNK_VERIFY_TLS` | `false`, because the lab's Splunk uses a self-signed certificate |
+| `ABUSEIPDB_API_KEY`, `VIRUSTOTAL_API_KEY` | the same keys as in the bot's `.env`; without them the Enrich tab shows "No threat-intel API keys configured" |
 
 [scripts/run-live.example.ps1](../scripts/run-live.example.ps1) asks for the token at a hidden prompt when `SPLUNK_URL` is set. If you set it by hand instead, type `$env:SPLUNK_TOKEN = '`, paste the token, and close with exactly one `'`. Do not copy a `PS C:\...>` prompt along with it. Then check the length without printing the token:
 

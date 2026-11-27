@@ -42,7 +42,7 @@ To rebuild the lab and the bot from scratch, follow the documents in this order:
 | **Alert intake** | Splunk alert webhook, shared-secret checked and validated, stored in SQLite, posted as an embed with the buttons that fit it: Acknowledge always, Enrich when there is a source IP, Isolate when there is a host (never on a heartbeat alert) |
 | **Triage** | List, show, comment on and close incidents (`true_positive`, `false_positive`, `benign`) |
 | **Hunting** | `/hunt` runs predefined read-only SPL templates through the Splunk REST API. Chat input only fills validated parameters |
-| **Enrichment** | IP reputation from AbuseIPDB and VirusTotal. Private IPs are never sent to third parties. A failed lookup yields an `Incomplete` verdict, never `Clean` |
+| **Enrichment** | IP reputation from AbuseIPDB and VirusTotal. Private IPs are never sent to third parties. A failed lookup yields an `Incomplete` verdict, never `Clean`. `Malicious` needs AbuseIPDB score 75 or more, or 5 or more VirusTotal engines; `Suspicious` needs score 25 or more, 3 or more malicious engines, or 5 or more suspicious engines (one engine alone is treated as noise) |
 | **Containment** | Isolate or release a host over SSH as a restricted `responder` user that may only run two sudoers-listed scripts |
 | **RBAC** | Three role tiers (READ, TRIAGE, RESPONSE) mapped to Discord role IDs, plus a required channel allow-list |
 | **Safety rails** | Confirmation buttons only the requester can press, an isolation deny-list, an SSH host allow-list, strict input validation |
