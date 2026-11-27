@@ -191,7 +191,7 @@ def test_the_scheduled_flush_with_an_empty_queue_needs_no_settings(action, tmp_p
 
 def test_the_scheduled_input_runs_the_resend_script_every_two_minutes():
     conf = (SCRIPT.parent.parent / "default" / "inputs.conf").read_text()
-    assert "[script://./bin/soc_bot_resend.py]" in conf and "interval = 120" in conf and "disabled = 0" in conf
+    assert "[script://$SPLUNK_HOME/etc/apps/soc_bot_alert/bin/soc_bot_resend.py]" in conf and "interval = 120" in conf and "disabled = 0" in conf
     assert (SCRIPT.parent / "soc_bot_resend.py").is_file()
 
 
