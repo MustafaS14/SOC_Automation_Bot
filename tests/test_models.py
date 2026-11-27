@@ -18,11 +18,13 @@ def test_internal_ip_is_never_judged():
         ({"abuse_score": 74}, "Suspicious"),
         ({"vt_malicious": 5}, "Malicious"),
         ({"vt_malicious": 4}, "Suspicious"),
+        ({"vt_malicious": 3}, "Suspicious"),
+        ({"vt_malicious": 2}, "Clean"),
         ({"abuse_score": 25}, "Suspicious"),
         ({"abuse_score": 24}, "Clean"),
-        ({"abuse_score": 0, "vt_malicious": 1}, "Suspicious"),
-        ({"abuse_score": 0, "vt_malicious": 0, "vt_suspicious": 2}, "Suspicious"),
-        ({"abuse_score": 0, "vt_malicious": 0, "vt_suspicious": 1}, "Clean"),
+        ({"abuse_score": 0, "vt_malicious": 1}, "Clean"),  # 8.8.8.8: one engine of 54, AbuseIPDB 0
+        ({"abuse_score": 0, "vt_malicious": 0, "vt_suspicious": 5}, "Suspicious"),
+        ({"abuse_score": 0, "vt_malicious": 0, "vt_suspicious": 4}, "Clean"),
         ({}, "Unknown"),
     ],
 )
@@ -62,7 +64,9 @@ def test_unknown_only_when_there_are_no_errors_and_no_data():
 
 def test_real_findings_win_over_a_failed_lookup():
     assert report(abuse_score=90, errors=["VirusTotal: ReadTimeout"]).verdict == "Malicious"
-    assert report(vt_malicious=1, errors=["AbuseIPDB: ReadTimeout"]).verdict == "Suspicious"
+    assert report(vt_malicious=3, errors=["AbuseIPDB: ReadTimeout"]).verdict == "Suspicious"
+    # One engine alone is noise, so with the other lookup down the answer is not a finding yet.
+    assert report(vt_malicious=1, errors=["AbuseIPDB: ReadTimeout"]).verdict == "Incomplete"
 
 
 def test_incident_from_row_parses_timestamps_and_nulls():

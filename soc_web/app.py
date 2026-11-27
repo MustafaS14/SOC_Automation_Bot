@@ -112,6 +112,8 @@ def build_timeline(inc: Any, acks: list[dict[str, Any]]) -> list[dict[str, Any]]
     for c in inc.comments:
         if c.author == "triage-assistant":
             kind, label = "ai", "AI triage note"
+        elif c.author == "first-response":
+            kind, label = "first-response", "Automatic first response"
         elif c.body.startswith("Closed as "):
             kind, label = "closed", "Closed"
         elif c.body.startswith("IP enrichment "):
