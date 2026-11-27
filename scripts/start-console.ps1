@@ -5,7 +5,9 @@
 # only in this process's environment. Open the tunnels first with .\scripts\lab\start-tunnels.ps1.
 #   Hidden prompt 1: the bot's API_SECRET (at least 32 characters).
 #   Hidden prompt 2: the read-only Splunk token for the Hunt page. Press Enter to skip it (Hunt then stays off).
-#   Hidden prompts 3 and 4: the AbuseIPDB and VirusTotal keys for the IP reputation lookup. Press Enter to skip each
+#   Hidden prompt 3: the Splunk HEC token, so the console's audit entries are copied to index soc_audit. Press Enter to skip.
+#     It needs the 18088 tunnel and the Splunk token from prompt 2 (forwarding is off without it).
+#   Hidden prompts 4 and 5: the AbuseIPDB and VirusTotal keys for the IP reputation lookup. Press Enter to skip each
 #   (the lookup then shows "No threat-intel API keys configured"). They are the same keys as in the bot's .env.
 $ErrorActionPreference = "Stop"
 $repo   = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -36,6 +38,17 @@ if ($token) {
     $env:SPLUNK_TOKEN = $token
     $env:SPLUNK_URL = "https://127.0.0.1:18089"
     $env:SPLUNK_VERIFY_TLS = "false"
+}
+
+$hec = Read-Host "Splunk HEC token (hidden, Enter to skip audit forwarding)" -AsSecureString
+$hecToken = [System.Net.NetworkCredential]::new("", $hec).Password
+if ($hecToken) {
+    if (-not $env:SPLUNK_TOKEN) { throw "Audit forwarding needs the Splunk token from the previous prompt as well." }
+    if (-not (Test-NetConnection 127.0.0.1 -Port 18088 -InformationLevel Quiet -WarningAction SilentlyContinue)) {
+        throw "Port 18088 is not open. Run .\scripts\lab\start-tunnels.ps1 (it opens a third window for the HEC tunnel)."
+    }
+    $env:SPLUNK_HEC_TOKEN = $hecToken
+    $env:SPLUNK_HEC_URL = "https://127.0.0.1:18088/services/collector/event"
 }
 
 foreach ($key in @(@("ABUSEIPDB_API_KEY", "AbuseIPDB API key"), @("VIRUSTOTAL_API_KEY", "VirusTotal API key"))) {
