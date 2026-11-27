@@ -64,7 +64,9 @@ def test_unknown_only_when_there_are_no_errors_and_no_data():
 
 def test_real_findings_win_over_a_failed_lookup():
     assert report(abuse_score=90, errors=["VirusTotal: ReadTimeout"]).verdict == "Malicious"
-    assert report(vt_malicious=1, errors=["AbuseIPDB: ReadTimeout"]).verdict == "Suspicious"
+    assert report(vt_malicious=3, errors=["AbuseIPDB: ReadTimeout"]).verdict == "Suspicious"
+    # One engine alone is noise, so with the other lookup down the answer is not a finding yet.
+    assert report(vt_malicious=1, errors=["AbuseIPDB: ReadTimeout"]).verdict == "Incomplete"
 
 
 def test_incident_from_row_parses_timestamps_and_nulls():
