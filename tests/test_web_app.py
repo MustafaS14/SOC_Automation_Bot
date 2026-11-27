@@ -533,6 +533,7 @@ def test_incident_timeline_orders_alert_ack_notes_and_close(stack):
     client, _ = login(app, "triage")
     inc = backends.runner.run(backends.store.create(rule="Timeline rule", severity="High", host="h1", src_ip="203.0.113.9"))
     post(client, f"/incidents/{inc.id}/ack", f"/incidents/{inc.id}")
+    backends.runner.run(backends.store.add_comment(inc.id, "first-response", "Automatic first response (last 1h, read-only):"))
     backends.runner.run(backends.store.add_comment(inc.id, "triage-assistant", "Likely brute force, T1110."))
     backends.runner.run(backends.store.add_comment(inc.id, "bob@discord", "IP enrichment 203.0.113.9: verdict Malicious"))
     post(client, f"/incidents/{inc.id}/comment", f"/incidents/{inc.id}", message="Looking at it")
@@ -540,7 +541,7 @@ def test_incident_timeline_orders_alert_ack_notes_and_close(stack):
          comment="Confirmed", step="confirm")
     backends.audit_log.close()  # flush the queued audit lines to the file the page reads
     html = client.get(f"/incidents/{inc.id}").get_data(as_text=True)
-    order = ["Alert raised", "Acknowledged", "AI triage note", "IP enrichment", "Comment", "Closed"]
+    order = ["Alert raised", "Acknowledged", "Automatic first response", "AI triage note", "IP enrichment", "Comment", "Closed"]
     positions = [html.index(f"<strong>{label}</strong>") for label in order]
     assert positions == sorted(positions)
 
@@ -626,3 +627,12 @@ def test_coverage_navigator_download_is_a_json_attachment(stack):
     assert "attachment" in resp.headers["Content-Disposition"]
     layer = json.loads(resp.get_data(as_text=True))
     assert layer["domain"] == "enterprise-attack" and layer["techniques"]
+
+
+def test_dashboard_has_the_ip_lookup_box_for_analysts_only(stack):
+    app, _, _ = stack
+    client, _ = login(app, "read")
+    html = client.get("/").get_data(as_text=True)
+    assert 'name="ip"' in html and "IP reputation lookup" in html
+    viewer, _ = login(app, "viewer")
+    assert "IP reputation lookup" not in viewer.get("/").get_data(as_text=True)

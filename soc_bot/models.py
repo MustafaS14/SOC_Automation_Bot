@@ -131,7 +131,8 @@ class IpReport:
         malicious = self.vt_malicious or 0
         if score >= 75 or malicious >= 5:
             return "Malicious"
-        if score >= 25 or malicious >= 1 or (self.vt_suspicious or 0) >= 2:
+        # One engine out of dozens is common noise on popular addresses (8.8.8.8 gets one), so it takes three.
+        if score >= 25 or malicious >= 3 or (self.vt_suspicious or 0) >= 5:
             return "Suspicious"
         if self.abuse_score is None and self.vt_malicious is None:
             # Both lookups failed (or neither ran): say so rather than implying a neutral answer.

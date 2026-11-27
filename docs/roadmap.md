@@ -34,6 +34,7 @@ Still to do:
 | Show only the buttons that fit each alert type (a heartbeat card should not offer Isolate) | Fewer wrong clicks |
 | Match source IPs and file hashes against a free threat-intel feed | Raises severity automatically on a hit |
 | Add a network sensor (NDR): Suricata or Zeek on `soc-siem` or a small sensor VM watching the lab network (192.168.56.0/24), shipped to Splunk as a `network` index. Start with three detections that match the Caldera scenarios: SSH brute force seen as many connections to port 22, agent beaconing to Caldera (192.168.56.30:8888), and a port scan from `soc-attacker`. Then correlate by IP with the host logs, so the first-response card can show network activity next to the host commands | Adds a second data source next to the endpoint logs, sees what an attacker cannot hide on a host, and turns the project from a mini EDR into an EDR plus NDR pipeline with correlation |
+| Add OpenCTI as a threat-intelligence source: a bot lookup of the incident's IPs, domains and file hashes in OpenCTI, with what it knows (actor, campaign, confidence) added to the first-response card next to the AbuseIPDB and VirusTotal verdict. OpenCTI is a Docker stack that needs several GB of RAM, so it would run on its own VM; a lighter first step is loading free indicator lists into Splunk and matching against them | Moves enrichment from "is this address reported" to "who is behind it and what else do we know", and is the natural companion to the network sensor |
 
 ## Phase 4: larger extensions (only if the rest is done)
 

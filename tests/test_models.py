@@ -18,11 +18,13 @@ def test_internal_ip_is_never_judged():
         ({"abuse_score": 74}, "Suspicious"),
         ({"vt_malicious": 5}, "Malicious"),
         ({"vt_malicious": 4}, "Suspicious"),
+        ({"vt_malicious": 3}, "Suspicious"),
+        ({"vt_malicious": 2}, "Clean"),
         ({"abuse_score": 25}, "Suspicious"),
         ({"abuse_score": 24}, "Clean"),
-        ({"abuse_score": 0, "vt_malicious": 1}, "Suspicious"),
-        ({"abuse_score": 0, "vt_malicious": 0, "vt_suspicious": 2}, "Suspicious"),
-        ({"abuse_score": 0, "vt_malicious": 0, "vt_suspicious": 1}, "Clean"),
+        ({"abuse_score": 0, "vt_malicious": 1}, "Clean"),  # 8.8.8.8: one engine of 54, AbuseIPDB 0
+        ({"abuse_score": 0, "vt_malicious": 0, "vt_suspicious": 5}, "Suspicious"),
+        ({"abuse_score": 0, "vt_malicious": 0, "vt_suspicious": 4}, "Clean"),
         ({}, "Unknown"),
     ],
 )

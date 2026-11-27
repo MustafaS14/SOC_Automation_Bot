@@ -268,6 +268,9 @@ ol.timeline .ev-ack::before { background: var(--cream); }
 ol.timeline .ev-closed::before { background: var(--orange); }
 ol.timeline .ev-ai { background: var(--readout); border-radius: 10px; padding-right: 12px; }
 ol.timeline .ev-ai::before { background: var(--cream); }
+ol.timeline .ev-first-response { background: var(--readout); border-radius: 10px; padding-right: 12px; }
+ol.timeline .ev-first-response::before { background: var(--teal); }
+ol.timeline .ev-first-response p { white-space: pre-line; }
 
 /* ---------- status strip ---------- */
 .statusbar { position: relative; z-index: 1; background: var(--deep); border-bottom: 2px solid var(--slate); font-size: 13px; color: var(--muted); }
