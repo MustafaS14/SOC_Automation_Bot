@@ -170,6 +170,31 @@ def test_only_execute_mode_is_supported(action):
     assert action.main(["x", "--other"], io.StringIO("{}")) == 2
 
 
+def test_the_scheduled_flush_sends_the_queue_without_a_new_alert(action, make_bot, tmp_path):
+    run(action, "http://127.0.0.1:9/webhook/splunk", tmp_path)  # bot down: queued
+    bot = make_bot()
+    (tmp_path / "local" / "url").write_text(bot.url)
+    assert action.main(["x", "--flush"], io.StringIO(""), sleep=action.sleeps.append) == 0
+    assert [b["search_name"] for _, b in bot.received] == ["Discovery commands"]
+    assert list((tmp_path / "local" / "spool").glob("*.json")) == []
+
+
+def test_the_scheduled_flush_keeps_the_queue_while_the_bot_is_down(action, tmp_path):
+    run(action, "http://127.0.0.1:9/webhook/splunk", tmp_path)
+    assert action.main(["x", "--flush"], io.StringIO(""), sleep=action.sleeps.append) == 0
+    assert len(list((tmp_path / "local" / "spool").glob("*.json"))) == 1
+
+
+def test_the_scheduled_flush_with_an_empty_queue_needs_no_settings(action, tmp_path):
+    assert action.main(["x", "--flush"], io.StringIO("")) == 0  # no local/url exists: it must not even look for one
+
+
+def test_the_scheduled_input_runs_the_resend_script_every_two_minutes():
+    conf = (SCRIPT.parent.parent / "default" / "inputs.conf").read_text()
+    assert "[script://./bin/soc_bot_resend.py]" in conf and "interval = 120" in conf and "disabled = 0" in conf
+    assert (SCRIPT.parent / "soc_bot_resend.py").is_file()
+
+
 def test_classification():
     spec = importlib.util.spec_from_file_location("soc_bot_webhook_classify", SCRIPT)
     m = importlib.util.module_from_spec(spec)

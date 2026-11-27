@@ -3,7 +3,9 @@
 
 A card used to be lost when the bot was down at the moment an alert fired, because Splunk runs an alert action once
 and never retries it. This script now retries a temporary failure a few times, and if the bot stays unreachable it
-keeps the alert in a small on-disk spool (local/spool) and sends it again the next time any alert fires here.
+keeps the alert in a small on-disk spool (local/spool). It is sent again the next time any alert fires here, and also
+every two minutes by a scripted input (bin/soc_bot_resend.py, which calls this script with --flush), so a card is late by
+minutes on a quiet lab instead of waiting for the next alert.
 Sending an alert twice is safe: the bot merges repeats into the open incident.
 """
 import json
@@ -134,10 +136,20 @@ def _remove(path):
         pass
 
 
+def flush_only(sleep=time.sleep):
+    """The scheduled re-send: no alert is firing, so only the queue is worked. Does nothing when the queue is empty."""
+    if not spool_files(spool_dir()):
+        return 0
+    spool_flush(spool_dir(), read("url"), read("secret"), sleep=sleep)
+    return 0
+
+
 def main(argv=None, stdin=None, sleep=time.sleep):
     argv = sys.argv if argv is None else argv
+    if len(argv) >= 2 and argv[1] == "--flush":
+        return flush_only(sleep=sleep)
     if len(argv) < 2 or argv[1] != "--execute":
-        print("FATAL unsupported mode, expected --execute", file=sys.stderr)
+        print("FATAL unsupported mode, expected --execute or --flush", file=sys.stderr)
         return 2
     payload = json.loads((sys.stdin if stdin is None else stdin).read())
     body = {k: payload.get(k) for k in ("search_name", "result", "results_link")}
@@ -150,7 +162,7 @@ def main(argv=None, stdin=None, sleep=time.sleep):
     if result == TEMPORARY:
         try:
             spool_add(spool_dir(), body)
-            log("ERROR", "the bot is unreachable; the alert is queued and will be re-sent on the next alert")
+            log("ERROR", "the bot is unreachable; the alert is queued and will be re-sent within a few minutes")
         except OSError as e:
             log("ERROR", f"the bot is unreachable and the alert could not be queued ({type(e).__name__})")
     return 1  # Splunk records the failure; REJECTED was already logged
