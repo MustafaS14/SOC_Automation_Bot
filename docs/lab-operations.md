@@ -30,7 +30,7 @@ bash ~/lab/start-victim.sh
 
 The victim has no git and no clone of the repository. Copy the scripts to it from the PC whenever they change: `scp -r scripts/lab mus@192.168.56.20:~/` from the project folder; the folder arrives as `~/lab`. Start the attacker before the victim, because the agent downloads from Caldera. Keep all three VMs on UTC (`sudo timedatectl set-timezone Etc/UTC`): a victim left on a local zone shows log and card times an hour off the others, even though its clock is correct.
 
-On the PC, `.\scripts\lab\start-tunnels.ps1` opens the two SSH tunnels, then start the console with your launcher (set `SPLUNK_URL` and `SPLUNK_VERIFY_TLS` first, see [live-lab.md](live-lab.md)).
+On the PC, `.\scripts\lab\start-tunnels.ps1` opens the three SSH tunnels (bot API, Splunk REST, Splunk HEC), then start the console with your launcher (set `SPLUNK_URL` and `SPLUNK_VERIFY_TLS` first, see [live-lab.md](live-lab.md)).
 
 If Caldera cannot read its saved state (the log says "Failed to decrypt saved Caldera state") the attacker script restarts it with `--fresh`. Old operations are dropped; the SOC abilities and adversary are plain files and stay. Log in to Caldera as `red` with the password `admin`, typing it by hand: a browser autofill leaves the Log In button disabled.
 

@@ -69,7 +69,7 @@ Settings the console needs:
 
 Do not put the API secret in a file. Either keep an `op://` reference in `.env` and start with `op run --env-file=.env -- python -m soc_web` ([secrets](secrets.md)), or type it at a hidden prompt, which keeps it in that process only. [scripts/run-live.example.ps1](../scripts/run-live.example.ps1) is a PowerShell launcher that does the second: copy it, set the two paths at the top, and run it from your own terminal. Run it with `adduser` once to create your account, then without arguments to start the console.
 
-For a ready-made launcher that needs no editing, use [scripts/start-console.ps1](../scripts/start-console.ps1): run `.\scripts\start-console.ps1` from the repo. It finds the repo itself, stops an old console on port 8000, checks that the 18765 tunnel is open, and asks for the API secret and (optionally) the Splunk token, the AbuseIPDB key and the VirusTotal key at hidden prompts (the two threat-intel keys power the IP lookup on the Enrich tab). It does not create accounts; use the example launcher with `adduser` for that.
+For a ready-made launcher that needs no editing, use [scripts/start-console.ps1](../scripts/start-console.ps1): run `.\scripts\start-console.ps1` from the repo. It finds the repo itself, stops an old console on port 8000, checks that the 18765 tunnel is open, and asks for the API secret and (optionally) the Splunk token, the Splunk HEC token, the AbuseIPDB key and the VirusTotal key at hidden prompts (the two threat-intel keys power the IP lookup on the Enrich tab). It does not create accounts; use the example launcher with `adduser` for that.
 
 Accounts are created at the command line and the password is typed at a prompt:
 
@@ -107,6 +107,22 @@ Settings the console needs, in addition to the table in section 3:
 | `SPLUNK_TOKEN` | the read-only token |
 | `SPLUNK_VERIFY_TLS` | `false`, because the lab's Splunk uses a self-signed certificate |
 | `ABUSEIPDB_API_KEY`, `VIRUSTOTAL_API_KEY` | the same keys as in the bot's `.env`; without them the Enrich tab shows "No threat-intel API keys configured" |
+
+### Audit entries in Splunk
+
+Both the bot and the console copy every audit entry to Splunk index `soc_audit` (sourcetype `soc_bot:audit`) when a HEC URL and token are set. The local `audit.jsonl` stays as the convenience copy; the Splunk copy is the one nobody can edit from the application server.
+
+- **Bot (on soc-siem).** Add two lines to the bot's `.env`, using the HEC token from `~/siem/.env` (`SPLUNK_HEC_TOKEN`), then restart the bot. The bot is on the same machine as Splunk, so no tunnel is needed:
+
+  ```
+  SPLUNK_HEC_URL=https://127.0.0.1:8088/services/collector/event
+  SPLUNK_HEC_TOKEN=<the HEC token>
+  ```
+
+  The bot only forwards when `SPLUNK_URL` is set too, and it uses `SPLUNK_VERIFY_TLS=false` for the self-signed certificate.
+- **Console (on the PC).** `scripts/lab/start-tunnels.ps1` opens a third tunnel, `18088` to the HEC port. `scripts/start-console.ps1` then asks for the HEC token at a hidden prompt (Enter skips it) and sets `SPLUNK_HEC_URL=https://127.0.0.1:18088/services/collector/event`.
+- **Check.** In Splunk Web, search `index=soc_audit | table _time actor action target outcome channel | head 20` over the last hour. A bot action (for example `/enrich`) shows `channel` empty or `discord`; a console action shows `channel=web`. A failed forward never blocks an action; it only logs a warning (`Failed to forward audit entry to Splunk HEC`).
+- **Not copied.** Entries written before forwarding was switched on, and account changes made with `python -m soc_web adduser` (channel `cli`), stay in the local file only.
 
 [scripts/run-live.example.ps1](../scripts/run-live.example.ps1) asks for the token at a hidden prompt when `SPLUNK_URL` is set. If you set it by hand instead, type `$env:SPLUNK_TOKEN = '`, paste the token, and close with exactly one `'`. Do not copy a `PS C:\...>` prompt along with it. Then check the length without printing the token:
 
