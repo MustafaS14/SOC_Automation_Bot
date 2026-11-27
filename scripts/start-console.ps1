@@ -5,6 +5,8 @@
 # only in this process's environment. Open the tunnels first with .\scripts\lab\start-tunnels.ps1.
 #   Hidden prompt 1: the bot's API_SECRET (at least 32 characters).
 #   Hidden prompt 2: the read-only Splunk token for the Hunt page. Press Enter to skip it (Hunt then stays off).
+#   Hidden prompts 3 and 4: the AbuseIPDB and VirusTotal keys for the IP reputation lookup. Press Enter to skip each
+#   (the lookup then shows "No threat-intel API keys configured"). They are the same keys as in the bot's .env.
 $ErrorActionPreference = "Stop"
 $repo   = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $python = Join-Path $repo ".venv\Scripts\python.exe"
@@ -34,6 +36,12 @@ if ($token) {
     $env:SPLUNK_TOKEN = $token
     $env:SPLUNK_URL = "https://127.0.0.1:18089"
     $env:SPLUNK_VERIFY_TLS = "false"
+}
+
+foreach ($key in @(@("ABUSEIPDB_API_KEY", "AbuseIPDB API key"), @("VIRUSTOTAL_API_KEY", "VirusTotal API key"))) {
+    $s = Read-Host "$($key[1]) (hidden, Enter to skip)" -AsSecureString
+    $v = [System.Net.NetworkCredential]::new("", $s).Password
+    if ($v) { Set-Item -Path "Env:$($key[0])" -Value $v }
 }
 
 # 4. Settings for the live lab.
