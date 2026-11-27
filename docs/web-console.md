@@ -33,7 +33,7 @@ One real run in the lab: a Caldera agent disguised as `splunkd` produced two inc
 | Dashboard | VIEWER | Counts of incidents by status and open ones by severity; the latest open incidents for READ and above |
 | Incidents, incident detail | READ | Filter by status and severity; the detail page has a timeline (alert raised, acknowledgements, comments, AI triage notes, IP enrichments, close) |
 | Acknowledge, comment, close | TRIAGE | Close takes a second confirmation page, like the bot's confirm button |
-| Enrich | READ | AbuseIPDB and VirusTotal verdict for an IP; optionally recorded as an incident comment |
+| Enrich | READ | AbuseIPDB and VirusTotal verdict for an IP; optionally recorded as an incident comment. Needs `ABUSEIPDB_API_KEY` and `VIRUSTOTAL_API_KEY` in the console's environment (`start-console.ps1` asks for them) |
 | Hunt | READ | The predefined read-only SPL templates from `soc_bot/hunts.py`; input only fills a validated host or IP |
 | Ask | VIEWER | The AI assistant, answering at the signed-in user's tier. Shows that level, example questions that fit it, and shows a refusal in its own amber panel |
 | Audit | ADMIN | Filter by actor, action, outcome, channel (`web`, `discord`, `cli`), date range, or "denied only"; 50 per page, newest first. Incident entries link to the incident; `ai.ask` rows show the asker's level, tools used and whether anything was refused |
