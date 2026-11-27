@@ -42,7 +42,7 @@ Splunk runs in Docker, so the app is copied into the container:
 
 1. Copy this folder to `/opt/splunk/etc/apps/soc_bot_alert/` inside the container (as the `splunk` user).
 2. Create `local/url` and `local/secret` there, readable by the `splunk` user only.
-3. Reload without a restart: open `http://<soc-siem>:8000/en-US/debug/refresh` and confirm. The scheduled re-send is a new input, which Splunk may pick up only after a restart (`docker restart splunk`, then wait for `healthy`); test it as described below.
+3. Reload without a restart: open `http://<soc-siem>:8000/en-US/debug/refresh` and confirm. The scheduled re-send is a new input; the refresh was enough to start it in the lab (proved with the test below), but if the test card does not arrive within about three minutes, restart Splunk (`docker restart splunk`, then wait for `healthy`) and try again. Copy the three files into the container with `docker cp`, then give them to the `splunk` user (`chown splunk:splunk`) and strip any carriage returns (`sed -i 's/\r$//'`).
 4. Enable the action on an alert by adding `action.soc_bot_webhook = 1` to its stanza in `apps/search/local/savedsearches.conf`. The alert editor does not list custom actions that have no UI form, so this is done in the file. The repo copy is [`../savedsearches.conf`](../savedsearches.conf).
 
 ## Test the scheduled re-send
