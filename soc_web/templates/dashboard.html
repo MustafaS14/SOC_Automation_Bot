@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import incident_table, system, csrf %}
+{% from "_macros.html" import incident_table, system %}
 {% block content %}
 <h1>Dashboard</h1>
 
@@ -30,16 +30,6 @@
 </div>
 
 {% if user.tier >= P.READ %}
-<div class="panel">
-  <h2>IP reputation lookup</h2>
-  <form method="post" action="{{ url_for('enrich_ip') }}" class="compact">{{ csrf() }}
-    <label for="lookup-ip">IP address</label>
-    <input type="text" id="lookup-ip" name="ip" maxlength="45" placeholder="8.8.8.8" required>
-    <button class="primary" type="submit">Look up</button>
-  </form>
-  <p class="muted">Asks AbuseIPDB and VirusTotal and shows the verdict. Private addresses are never sent out.</p>
-</div>
-
 <div class="panel">
   <h2>Latest open incidents</h2>
   {% if recent %}

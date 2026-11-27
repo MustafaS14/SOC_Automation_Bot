@@ -629,10 +629,8 @@ def test_coverage_navigator_download_is_a_json_attachment(stack):
     assert layer["domain"] == "enterprise-attack" and layer["techniques"]
 
 
-def test_dashboard_has_the_ip_lookup_box_for_analysts_only(stack):
+def test_ip_lookup_lives_on_the_enrich_tab_not_the_dashboard(stack):
     app, _, _ = stack
     client, _ = login(app, "read")
-    html = client.get("/").get_data(as_text=True)
-    assert 'name="ip"' in html and "IP reputation lookup" in html
-    viewer, _ = login(app, "viewer")
-    assert "IP reputation lookup" not in viewer.get("/").get_data(as_text=True)
+    assert "IP reputation lookup" not in client.get("/").get_data(as_text=True)
+    assert 'name="ip"' in client.get("/enrich").get_data(as_text=True)
